@@ -1,0 +1,63 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+htmlcov/
+.venv/
+venv/
+dist/
+build/
+*.log
+.env
+.env.*
+.idea/
+.vscode/
+*.exe
+*.recording
+
+# Operating-system and editor state
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.cursor/
+
+# Local agent and assistant state
+.codex/
+.agents/
+.claude/
+
+# Machine-local configuration
+.python-version
+*.local
+*.local.*
+config.local.*
+settings.local.*
+
+# Credentials, certificates, and private configuration
+*.token
+*.credentials
+credentials.*
+secrets.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.conf
+
+# Hugging Face state and downloaded user data
+.cache/
+.huggingface/
+hf_home/
+/download/
+/downloads/
+/models/
+/data/

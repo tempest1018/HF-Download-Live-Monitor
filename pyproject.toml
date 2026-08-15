@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling>=1.27,<1.31"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hf-live-monitor"
+version = "0.1.0.dev0"
+description = "Cross-platform live monitoring for Hugging Face downloads"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "HF Live Monitor contributors" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+dependencies = [
+  "huggingface-hub>=0.27,<2",
+  "psutil>=6,<8",
+  "rich>=13.9,<15",
+  "typer>=0.15,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+  "pyright>=1.1,<2",
+  "pytest>=8,<9",
+  "ruff>=0.9,<1",
+  "twine>=6,<7",
+]
+standalone = ["pyinstaller>=6,<7"]
+
+[project.scripts]
+hf-live-monitor = "hf_live_monitor.cli:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hf_live_monitor"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = ["docs/prototypes"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/hf_live_monitor/cli.py" = ["B008"]
+
+[tool.pyright]
+include = ["src/hf_live_monitor"]
+pythonVersion = "3.10"
+typeCheckingMode = "strict"
