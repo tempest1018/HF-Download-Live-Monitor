@@ -7,6 +7,9 @@ HF Download Live Monitor is a privacy-conscious, cross-platform terminal monitor
 
 New here? Follow the [complete user manual](docs/user-manual.md) for prerequisites, installation, authentication, first use, maintenance, and troubleshooting.
 
+Release commits, tags, and artifacts are authenticated with the public key documented in the
+[security policy](SECURITY.md#signature-verification).
+
 ## Install
 
 Python 3.10 or newer is required.

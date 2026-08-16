@@ -52,6 +52,8 @@ secrets.*
 *.jks
 *.keystore
 *.conf
+*secret-key*.asc
+*.rev
 
 # Hugging Face state and downloaded user data
 .cache/
