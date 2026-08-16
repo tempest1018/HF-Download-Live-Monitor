@@ -4,14 +4,14 @@ from pathlib import Path
 
 from rich.console import Console
 
-from hf_live_monitor.models import (
+from hf_download_live_monitor.models import (
     DownloadSpec,
     FileProgress,
     FileState,
     ProgressSnapshot,
     RepoType,
 )
-from hf_live_monitor.renderers import (
+from hf_download_live_monitor.renderers import (
     JsonLinesRenderer,
     JsonRenderer,
     PlainRenderer,

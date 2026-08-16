@@ -1,11 +1,11 @@
-# HF Live Monitor Design
+# HF Download Live Monitor Design
 
 Date: 2026-08-14
 Status: Approved
 
 ## Product identity
 
-HF Live Monitor is a privacy-conscious, cross-platform terminal application for observing Hugging Face downloads. The Python distribution is named `hf-live-monitor`, the command is `hf-live-monitor`, and the source package is `hf_live_monitor`. The project uses the MIT license and supports Python 3.10 and newer.
+HF Download Live Monitor is a privacy-conscious, cross-platform terminal application for observing Hugging Face downloads. The Python distribution is named `hf-download-live-monitor`, the command is `hf-download-live-monitor`, and the source package is `hf_download_live_monitor`. The project uses the MIT license and supports Python 3.10 and newer.
 
 Native Windows, WSL, and Linux are first-class targets. macOS supports explicit monitoring and managed downloads in the initial release; automatic process attachment may be added when it can be implemented reliably.
 
@@ -31,17 +31,17 @@ Native Windows, WSL, and Linux are first-class targets. macOS supports explicit 
 
 ### `attach`
 
-`hf-live-monitor attach` discovers active Hugging Face CLI downloads. When exactly one supported process exists, monitoring begins automatically. When several exist, an interactive terminal offers a selection; `--all` monitors every supported process. In non-interactive use, ambiguity is reported with a meaningful exit code unless selection is supplied explicitly.
+`hf-download-live-monitor attach` discovers active Hugging Face CLI downloads. When exactly one supported process exists, monitoring begins automatically. When several exist, an interactive terminal offers a selection; `--all` monitors every supported process. In non-interactive use, ambiguity is reported with a meaningful exit code unless selection is supplied explicitly.
 
 Process discovery supports native Windows and POSIX systems, including WSL. It recognizes executable-path and Python module variants of the Hugging Face CLI, parses separated and equals-style options, resolves relative destinations against the child process working directory, and redacts credentials before data leaves the discovery boundary.
 
 ### `watch`
 
-`hf-live-monitor watch REPO --local-dir PATH` observes a known destination without inspecting local processes. Repository type, revision, selected filenames, include patterns, and exclude patterns can be supplied explicitly. This is the portable fallback for restricted systems, remote sessions, containers, and unsupported process layouts.
+`hf-download-live-monitor watch REPO --local-dir PATH` observes a known destination without inspecting local processes. Repository type, revision, selected filenames, include patterns, and exclude patterns can be supplied explicitly. This is the portable fallback for restricted systems, remote sessions, containers, and unsupported process layouts.
 
 ### `run`
 
-`hf-live-monitor run REPO [HF DOWNLOAD OPTIONS]` launches the official Hugging Face CLI as a managed child. Compatible download arguments are forwarded without exposing secrets, while the monitor tracks the exact PID and exit status. The first interrupt requests graceful child termination; a repeated interrupt forces termination. The monitor propagates a meaningful final exit status.
+`hf-download-live-monitor run REPO [HF DOWNLOAD OPTIONS]` launches the official Hugging Face CLI as a managed child. Compatible download arguments are forwarded without exposing secrets, while the monitor tracks the exact PID and exit status. The first interrupt requests graceful child termination; a repeated interrupt forces termination. The monitor propagates a meaningful final exit status.
 
 ### Common behavior
 
@@ -152,11 +152,11 @@ Routine CI does not require credentials or depend on mutable external repositori
 
 ## Repository and distribution
 
-The project uses a `src/hf_live_monitor` package layout with tests, documentation, scripts, and GitHub Actions workflows. `pyproject.toml` defines metadata, dependencies, development tools, and the console entry point.
+The project uses a `src/hf_download_live_monitor` package layout with tests, documentation, scripts, and GitHub Actions workflows. `pyproject.toml` defines metadata, dependencies, development tools, and the console entry point.
 
 Ruff provides formatting and linting, Pyright provides static type checking, and pytest provides tests. CI runs these checks, builds wheels and source distributions, validates their metadata, and installs and executes the built command in clean environments on Windows and Linux. macOS validates the supported explicit modes.
 
-The primary distribution is PyPI, with `pipx install hf-live-monitor` recommended and `uv tool install` and `pip` supported. Semantic versions are derived from release tags. Version `0.1.0` is the first public milestone; real-world stabilization precedes `1.0.0`.
+The primary distribution is PyPI, with `pipx install hf-download-live-monitor` recommended and `uv tool install` and `pip` supported. Semantic versions are derived from release tags. Version `0.1.0` is the first public milestone; real-world stabilization precedes `1.0.0`.
 
 Standalone Windows, Linux, and macOS executables are a later 0.x milestone. They are generated, tested, checksummed, and attached by CI. Package-manager listings such as Winget, Scoop, and Homebrew follow only after the underlying releases are stable.
 

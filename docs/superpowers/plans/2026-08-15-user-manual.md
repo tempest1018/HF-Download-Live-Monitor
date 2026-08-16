@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Deliver a tested, task-oriented installation and operations manual for every supported HF Live Monitor workflow.
+**Goal:** Deliver a tested, task-oriented installation and operations manual for every supported HF Download Live Monitor workflow.
 
 **Architecture:** Keep the README concise and link it prominently to one authoritative manual. Protect essential documentation coverage with lightweight tests, then perform three explicit editorial audits against the real CLI and security behavior.
 
@@ -35,7 +35,7 @@
 - Modify: `docs/user-manual.md`
 - Modify: `README.md`
 
-- [ ] Pass 1: compare every command and option against `hf-live-monitor --help` plus each command help; correct technical mismatches and missing prerequisites.
+- [ ] Pass 1: compare every command and option against `hf-download-live-monitor --help` plus each command help; correct technical mismatches and missing prerequisites.
 - [ ] Pass 2: follow the manual as a first-time Windows user and as a WSL/Linux user; improve navigation, ordering, copy-paste safety, expected results, and recovery instructions.
 - [ ] Pass 3: scan for credentials, personal paths, ambiguous claims, inconsistent terminology, repetition, and unsupported behavior; tighten language without removing necessary detail.
 - [ ] Run `python -m ruff format --check .`, `python -m ruff check .`, `python -m pyright`, and `python -m pytest -q`.

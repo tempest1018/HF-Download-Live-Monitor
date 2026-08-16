@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from hf_live_monitor.hf_command import parse_download_process
-from hf_live_monitor.models import DownloadSpec, MonitorError
-from hf_live_monitor.processes import ProcessProvider
+from hf_download_live_monitor.hf_command import parse_download_process
+from hf_download_live_monitor.models import DownloadSpec, MonitorError
+from hf_download_live_monitor.processes import ProcessProvider
 
 
 @dataclass(frozen=True, slots=True)

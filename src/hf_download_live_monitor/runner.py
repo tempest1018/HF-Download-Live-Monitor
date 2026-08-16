@@ -6,7 +6,7 @@ import subprocess
 from collections.abc import Callable
 from typing import Protocol
 
-from hf_live_monitor.models import DownloadSpec, RepoType
+from hf_download_live_monitor.models import DownloadSpec, RepoType
 
 
 class ChildProcess(Protocol):

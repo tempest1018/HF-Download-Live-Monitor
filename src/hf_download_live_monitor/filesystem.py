@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
 
-from hf_live_monitor.compat import short_cache_hash
-from hf_live_monitor.models import DownloadSpec, FileObservation, ManifestFile
-from hf_live_monitor.security import resolve_repo_path
+from hf_download_live_monitor.compat import short_cache_hash
+from hf_download_live_monitor.models import DownloadSpec, FileObservation, ManifestFile
+from hf_download_live_monitor.security import resolve_repo_path
 
 
 class FileSystemObserver:

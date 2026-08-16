@@ -1,7 +1,7 @@
 import click
 from typer.testing import CliRunner
 
-from hf_live_monitor.cli import cli
+from hf_download_live_monitor.cli import cli
 
 runner = CliRunner()
 

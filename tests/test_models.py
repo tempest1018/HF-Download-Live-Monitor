@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from hf_live_monitor.models import DownloadSpec, FileObservation, RepoType
+from hf_download_live_monitor.models import DownloadSpec, FileObservation, RepoType
 
 
 def test_repo_type_parses_case_insensitively() -> None:

@@ -1,4 +1,4 @@
-"""Command-line interface for HF Live Monitor."""
+"""Command-line interface for HF Download Live Monitor."""
 
 from __future__ import annotations
 
@@ -9,15 +9,20 @@ from typing import NoReturn
 import typer
 from rich.console import Console
 
-from hf_live_monitor.app import WatchApplication
-from hf_live_monitor.attach import discover_downloads, select_download
-from hf_live_monitor.engine import ProgressEngine
-from hf_live_monitor.filesystem import FileSystemObserver
-from hf_live_monitor.models import DownloadSpec, MonitorError, RepoType
-from hf_live_monitor.processes import system_process_provider
-from hf_live_monitor.renderers import JsonLinesRenderer, JsonRenderer, PlainRenderer, RichRenderer
-from hf_live_monitor.repository import HubRepository
-from hf_live_monitor.runner import ManagedDownload
+from hf_download_live_monitor.app import WatchApplication
+from hf_download_live_monitor.attach import discover_downloads, select_download
+from hf_download_live_monitor.engine import ProgressEngine
+from hf_download_live_monitor.filesystem import FileSystemObserver
+from hf_download_live_monitor.models import DownloadSpec, MonitorError, RepoType
+from hf_download_live_monitor.processes import system_process_provider
+from hf_download_live_monitor.renderers import (
+    JsonLinesRenderer,
+    JsonRenderer,
+    PlainRenderer,
+    RichRenderer,
+)
+from hf_download_live_monitor.repository import HubRepository
+from hf_download_live_monitor.runner import ManagedDownload
 
 cli = typer.Typer(no_args_is_help=True, help="Monitor Hugging Face downloads.")
 

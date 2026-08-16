@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from hf_live_monitor.models import DownloadSpec, MonitorError, RepoType
-from hf_live_monitor.repository import HubRepository
+from hf_download_live_monitor.models import DownloadSpec, MonitorError, RepoType
+from hf_download_live_monitor.repository import HubRepository
 
 
 class FakeApi:

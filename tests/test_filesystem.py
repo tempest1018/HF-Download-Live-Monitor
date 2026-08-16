@@ -1,9 +1,9 @@
 import os
 from pathlib import Path
 
-from hf_live_monitor.compat import short_cache_hash
-from hf_live_monitor.filesystem import FileSystemObserver
-from hf_live_monitor.models import DownloadSpec, ManifestFile
+from hf_download_live_monitor.compat import short_cache_hash
+from hf_download_live_monitor.filesystem import FileSystemObserver
+from hf_download_live_monitor.models import DownloadSpec, ManifestFile
 
 
 def make_partial(root: Path, filename: str, etag: str, content: bytes) -> Path:

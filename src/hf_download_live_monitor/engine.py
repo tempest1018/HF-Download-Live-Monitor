@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 
-from hf_live_monitor.models import (
+from hf_download_live_monitor.models import (
     DownloadSpec,
     FileObservation,
     FileProgress,

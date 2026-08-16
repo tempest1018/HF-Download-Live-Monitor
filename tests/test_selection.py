@@ -1,7 +1,7 @@
 import pytest
 
-from hf_live_monitor.models import ManifestFile, MonitorError
-from hf_live_monitor.selection import select_manifest
+from hf_download_live_monitor.models import ManifestFile, MonitorError
+from hf_download_live_monitor.selection import select_manifest
 
 MANIFEST = tuple(
     ManifestFile(name, size)

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from hf_live_monitor.security import redact_args, redact_text, resolve_repo_path
+from hf_download_live_monitor.security import redact_args, redact_text, resolve_repo_path
 
 
 @pytest.mark.parametrize(

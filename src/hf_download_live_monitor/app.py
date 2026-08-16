@@ -6,9 +6,14 @@ import time
 from collections.abc import Callable
 from typing import Protocol
 
-from hf_live_monitor.engine import ProgressEngine
-from hf_live_monitor.models import DownloadSpec, FileObservation, ManifestFile, MonitorError
-from hf_live_monitor.renderers import Renderer
+from hf_download_live_monitor.engine import ProgressEngine
+from hf_download_live_monitor.models import (
+    DownloadSpec,
+    FileObservation,
+    ManifestFile,
+    MonitorError,
+)
+from hf_download_live_monitor.renderers import Renderer
 
 
 class Repository(Protocol):

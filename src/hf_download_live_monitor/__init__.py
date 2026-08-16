@@ -1,9 +1,9 @@
-"""HF Live Monitor."""
+"""HF Download Live Monitor."""
 
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("hf-live-monitor")
+    __version__ = version("hf-download-live-monitor")
 except PackageNotFoundError:
     __version__ = "0.1.0.dev0"
 

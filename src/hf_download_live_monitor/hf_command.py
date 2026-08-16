@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hf_live_monitor.models import DownloadSpec, RepoType
-from hf_live_monitor.processes import ProcessRecord
+from hf_download_live_monitor.models import DownloadSpec, RepoType
+from hf_download_live_monitor.processes import ProcessRecord
 
 _VALUE_OPTIONS = {
     "--local-dir",

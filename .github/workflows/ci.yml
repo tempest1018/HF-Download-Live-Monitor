@@ -56,9 +56,9 @@ jobs:
       - run: python -m pip install build twine
       - run: python -m build
       - run: python -m twine check dist/*
-      - run: python -m venv /tmp/hf-live-smoke
-      - run: /tmp/hf-live-smoke/bin/python -m pip install dist/*.whl
-      - run: /tmp/hf-live-smoke/bin/hf-live-monitor --help
+      - run: python -m venv /tmp/hf-download-live-smoke
+      - run: /tmp/hf-download-live-smoke/bin/python -m pip install dist/*.whl
+      - run: /tmp/hf-download-live-smoke/bin/hf-download-live-monitor --help
       - uses: actions/upload-artifact@v7
         with:
           name: python-distributions

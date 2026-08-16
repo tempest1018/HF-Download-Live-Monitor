@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from hf_live_monitor.attach import discover_downloads, select_download
-from hf_live_monitor.models import MonitorError
-from hf_live_monitor.processes import ProcessRecord
+from hf_download_live_monitor.attach import discover_downloads, select_download
+from hf_download_live_monitor.models import MonitorError
+from hf_download_live_monitor.processes import ProcessRecord
 
 
 class FakeProvider:

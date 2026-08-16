@@ -21,6 +21,8 @@ def test_distribution_document_exists_and_is_not_empty(filename: str) -> None:
 
 def test_readme_documents_all_output_modes() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
+    assert readme.startswith("# HF Download Live Monitor\n")
+    assert "hf-download-live-monitor" in readme
     for value in ("--plain", "--json", "--jsonl", "--once"):
         assert value in readme
 
@@ -49,3 +51,9 @@ def test_complete_user_manual_is_linked_and_covers_operations() -> None:
     )
     for topic in required_topics:
         assert topic in manual
+
+
+def test_manual_uses_canonical_product_and_command() -> None:
+    manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
+    assert manual.startswith("# HF Download Live Monitor User Manual\n")
+    assert "hf-download-live-monitor --help" in manual

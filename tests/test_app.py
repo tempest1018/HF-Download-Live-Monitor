@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from hf_live_monitor.app import WatchApplication
-from hf_live_monitor.engine import ProgressEngine
-from hf_live_monitor.models import (
+from hf_download_live_monitor.app import WatchApplication
+from hf_download_live_monitor.engine import ProgressEngine
+from hf_download_live_monitor.models import (
     DownloadSpec,
     FileObservation,
     ManifestFile,

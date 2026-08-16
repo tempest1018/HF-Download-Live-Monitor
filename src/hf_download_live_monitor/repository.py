@@ -7,9 +7,9 @@ from typing import Any, Protocol, cast
 from huggingface_hub import HfApi
 from huggingface_hub.errors import GatedRepoError, HfHubHTTPError, RepositoryNotFoundError
 
-from hf_live_monitor.models import DownloadSpec, ManifestFile, MonitorError, RepoType
-from hf_live_monitor.security import redact_text
-from hf_live_monitor.selection import select_manifest
+from hf_download_live_monitor.models import DownloadSpec, ManifestFile, MonitorError, RepoType
+from hf_download_live_monitor.security import redact_text
+from hf_download_live_monitor.selection import select_manifest
 
 
 class HubApi(Protocol):

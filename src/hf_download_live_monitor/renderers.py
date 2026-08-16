@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
-from hf_live_monitor.models import ProgressSnapshot
+from hf_download_live_monitor.models import ProgressSnapshot
 
 
 class Renderer(Protocol):

@@ -5,7 +5,7 @@ Status: Approved
 
 ## Goal
 
-Provide a five-minute README path for new users and a complete, task-oriented manual that enables Windows, WSL, Linux, and macOS users to install, authenticate, run, verify, update, troubleshoot, and remove HF Live Monitor safely.
+Provide a five-minute README path for new users and a complete, task-oriented manual that enables Windows, WSL, Linux, and macOS users to install, authenticate, run, verify, update, troubleshoot, and remove HF Download Live Monitor safely.
 
 ## Documentation structure
 

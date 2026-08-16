@@ -1,4 +1,4 @@
-# HF Live Monitor User Manual
+# HF Download Live Monitor User Manual
 
 This manual takes you from a clean computer to a verified installation and a successfully monitored Hugging Face download. It also covers daily use, automation, updates, removal, privacy, and failure recovery.
 
@@ -26,14 +26,14 @@ This manual takes you from a clean computer to a verified installation and a suc
 
 ## Five-minute setup
 
-Use this path after `hf-live-monitor` is published to PyPI:
+Use this path after `hf-download-live-monitor` is published to PyPI:
 
 ```console
 python --version
-pipx install hf-live-monitor
-hf-live-monitor --help
+pipx install hf-download-live-monitor
+hf-download-live-monitor --help
 hf --help
-hf-live-monitor run hf-internal-testing/tiny-random-bert --local-dir ./tiny-bert
+hf-download-live-monitor run hf-internal-testing/tiny-random-bert --local-dir ./tiny-bert
 ```
 
 If the repository is private or gated, run `hf auth login` before the final command. Success means the monitor exits without a traceback and `./tiny-bert` contains the downloaded repository files.
@@ -43,18 +43,18 @@ Before the first public release, install from this trusted checkout instead:
 ```console
 python -m pip install -e ".[dev]"
 python -m pytest -q
-hf-live-monitor --help
+hf-download-live-monitor --help
 ```
 
 Continue through the full manual when using a standalone executable, WSL, private repositories, automation output, or an existing download.
 
 ## Choose the right mode
 
-HF Live Monitor has three commands:
+HF Download Live Monitor has three commands:
 
 | Mode | Use it when | Key requirement |
 | --- | --- | --- |
-| `run` | You want the simplest, most reliable experience. | HF Live Monitor starts the official download. |
+| `run` | You want the simplest, most reliable experience. | HF Download Live Monitor starts the official download. |
 | `watch` | You know the repository and destination directory. | Pass the same repository, revision, type, and filters as the download. |
 | `attach` | An `hf download` command is already running. | Process discovery must be supported and the command must use `--local-dir`. |
 
@@ -81,7 +81,7 @@ On Windows, `py --version` may work when `python --version` does not.
 
 ### Standalone executable
 
-The standalone executable does not require a separate Python installation for `watch` or `attach`. `run` still launches the official external `hf` command, so install the Hugging Face CLI separately or pass its path with `--hf-executable`. Download standalone HF Live Monitor files only from this project's GitHub Releases page and verify their checksums before running them.
+The standalone executable does not require a separate Python installation for `watch` or `attach`. `run` still launches the official external `hf` command, so install the Hugging Face CLI separately or pass its path with `--hf-executable`. Download standalone HF Download Live Monitor files only from this project's GitHub Releases page and verify their checksums before running them.
 
 ### Hugging Face access
 
@@ -109,7 +109,7 @@ To remove locally stored Hugging Face authentication:
 hf auth logout
 ```
 
-HF Live Monitor delegates authentication to `huggingface_hub`. It does not ask for, save, or print tokens. The `HF_TOKEN` environment variable is supported by Hugging Face, but persistent shell environment variables can be exposed by diagnostics or child processes; prefer `hf auth login` on a personal workstation.
+HF Download Live Monitor delegates authentication to `huggingface_hub`. It does not ask for, save, or print tokens. The `HF_TOKEN` environment variable is supported by Hugging Face, but persistent shell environment variables can be exposed by diagnostics or child processes; prefer `hf auth login` on a personal workstation.
 
 ## Installation
 
@@ -122,7 +122,7 @@ Choose one method. Do not install the application through several methods simult
 Install pipx using its platform instructions, then run:
 
 ```console
-pipx install hf-live-monitor
+pipx install hf-download-live-monitor
 ```
 
 If the command is not immediately available, open a new terminal after running:
@@ -134,7 +134,7 @@ pipx ensurepath
 ### Option B: uv tool
 
 ```console
-uv tool install hf-live-monitor
+uv tool install hf-download-live-monitor
 ```
 
 Confirm that the uv tool binary directory is on your `PATH` if the command is not found.
@@ -147,7 +147,7 @@ Windows PowerShell:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install hf-live-monitor
+python -m pip install hf-download-live-monitor
 ```
 
 WSL, Linux, and macOS:
@@ -156,7 +156,7 @@ WSL, Linux, and macOS:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install hf-live-monitor
+python -m pip install hf-download-live-monitor
 ```
 
 The command remains available only while that environment is active unless you invoke its executable directly.
@@ -170,25 +170,25 @@ The command remains available only while that environment is active unless you i
 Windows PowerShell:
 
 ```powershell
-Get-FileHash .\hf-live-monitor.exe -Algorithm SHA256
-Get-Content .\hf-live-monitor.exe.sha256
+Get-FileHash .\hf-download-live-monitor.exe -Algorithm SHA256
+Get-Content .\hf-download-live-monitor.exe.sha256
 ```
 
 The two hexadecimal digests must match exactly. Then run:
 
 ```powershell
-.\hf-live-monitor.exe --help
+.\hf-download-live-monitor.exe --help
 ```
 
 Linux or macOS:
 
 ```bash
-sha256sum -c hf-live-monitor.sha256
-chmod +x hf-live-monitor
-./hf-live-monitor --help
+sha256sum -c hf-download-live-monitor.sha256
+chmod +x hf-download-live-monitor
+./hf-download-live-monitor --help
 ```
 
-On macOS, use `shasum -a 256 hf-live-monitor` if `sha256sum` is unavailable. Do not bypass operating-system security warnings for an artifact whose checksum or source you cannot verify.
+On macOS, use `shasum -a 256 hf-download-live-monitor` if `sha256sum` is unavailable. Do not bypass operating-system security warnings for an artifact whose checksum or source you cannot verify.
 
 ### Development installation
 
@@ -206,13 +206,13 @@ Development installation is for contributors, not ordinary users.
 Run:
 
 ```console
-hf-live-monitor --help
-hf-live-monitor watch --help
-hf-live-monitor attach --help
-hf-live-monitor run --help
+hf-download-live-monitor --help
+hf-download-live-monitor watch --help
+hf-download-live-monitor attach --help
+hf-download-live-monitor run --help
 ```
 
-For a standalone file, replace `hf-live-monitor` with `./hf-live-monitor` or `.\hf-live-monitor.exe`.
+For a standalone file, replace `hf-download-live-monitor` with `./hf-download-live-monitor` or `.\hf-download-live-monitor.exe`.
 
 Expected result: all four commands print help and exit without a traceback. Also verify the official Hugging Face CLI when you intend to use `run`:
 
@@ -223,11 +223,11 @@ hf --help
 If your shell finds a different installation than expected:
 
 ```powershell
-Get-Command hf-live-monitor -All
+Get-Command hf-download-live-monitor -All
 ```
 
 ```bash
-command -v hf-live-monitor
+command -v hf-download-live-monitor
 ```
 
 ## Quick start
@@ -235,7 +235,7 @@ command -v hf-live-monitor
 Choose a small public model repository and a new destination directory. The following example uses a commonly available test-sized repository; if it becomes unavailable, substitute another small public model:
 
 ```console
-hf-live-monitor run hf-internal-testing/tiny-random-bert --local-dir ./tiny-bert
+hf-download-live-monitor run hf-internal-testing/tiny-random-bert --local-dir ./tiny-bert
 ```
 
 Expected behavior:
@@ -248,7 +248,7 @@ Expected behavior:
 To produce one machine-readable observation instead:
 
 ```console
-hf-live-monitor watch hf-internal-testing/tiny-random-bert --local-dir ./tiny-bert --json --once
+hf-download-live-monitor watch hf-internal-testing/tiny-random-bert --local-dir ./tiny-bert --json --once
 ```
 
 ## Watch mode
@@ -264,7 +264,7 @@ hf download owner/repository --local-dir ./download
 Monitor it in terminal two:
 
 ```console
-hf-live-monitor watch owner/repository --local-dir ./download
+hf-download-live-monitor watch owner/repository --local-dir ./download
 ```
 
 The repository, repository type, revision, selected filenames, include patterns, and exclude patterns must match the download. Otherwise totals can include files the downloader did not request.
@@ -272,11 +272,11 @@ The repository, repository type, revision, selected filenames, include patterns,
 Useful options:
 
 ```console
-hf-live-monitor watch owner/repository --local-dir ./download --once
-hf-live-monitor watch owner/repository --local-dir ./download --refresh 0.5
-hf-live-monitor watch owner/repository --local-dir ./download --rate-window 3
-hf-live-monitor watch owner/repository --local-dir ./download --plain
-hf-live-monitor watch owner/repository --local-dir ./download --ascii --no-color
+hf-download-live-monitor watch owner/repository --local-dir ./download --once
+hf-download-live-monitor watch owner/repository --local-dir ./download --refresh 0.5
+hf-download-live-monitor watch owner/repository --local-dir ./download --rate-window 3
+hf-download-live-monitor watch owner/repository --local-dir ./download --plain
+hf-download-live-monitor watch owner/repository --local-dir ./download --ascii --no-color
 ```
 
 - `--refresh` controls seconds between observations; minimum `0.01`, default `0.25`.
@@ -291,19 +291,19 @@ Press Ctrl+C to stop monitoring. In `watch` mode this stops only the monitor, no
 `attach` discovers supported `hf download` processes that include `--local-dir`.
 
 ```console
-hf-live-monitor attach
+hf-download-live-monitor attach
 ```
 
 If one download is found, monitoring starts. If several are found in an interactive terminal, select one by number. For automation or explicit selection:
 
 ```console
-hf-live-monitor attach --pid 1234
+hf-download-live-monitor attach --pid 1234
 ```
 
 To take one snapshot of every discovered download:
 
 ```console
-hf-live-monitor attach --all --once --jsonl
+hf-download-live-monitor attach --all --once --jsonl
 ```
 
 `--pid` and `--all` cannot be used together. Continuous multi-download `--all` output is deliberately rejected; use `--all --once`.
@@ -322,7 +322,7 @@ Relative `--local-dir` values are resolved against the downloader process's work
 `run` is the recommended general-purpose mode:
 
 ```console
-hf-live-monitor run owner/repository --local-dir ./download
+hf-download-live-monitor run owner/repository --local-dir ./download
 ```
 
 It constructs an argument list and launches the official `hf download` executable directly. It does not evaluate a shell command.
@@ -330,19 +330,19 @@ It constructs an argument list and launches the official `hf download` executabl
 Examples:
 
 ```console
-hf-live-monitor run owner/repository --local-dir ./download --revision v2
-hf-live-monitor run owner/dataset --repo-type dataset --local-dir ./dataset
-hf-live-monitor run owner/space --repo-type space --local-dir ./space
-hf-live-monitor run owner/repository --local-dir ./download --filename config.json
+hf-download-live-monitor run owner/repository --local-dir ./download --revision v2
+hf-download-live-monitor run owner/dataset --repo-type dataset --local-dir ./dataset
+hf-download-live-monitor run owner/space --repo-type space --local-dir ./space
+hf-download-live-monitor run owner/repository --local-dir ./download --filename config.json
 ```
 
 If `hf` is installed under a different executable name or path:
 
 ```console
-hf-live-monitor run owner/repository --local-dir ./download --hf-executable /path/to/hf
+hf-download-live-monitor run owner/repository --local-dir ./download --hf-executable /path/to/hf
 ```
 
-On the first Ctrl+C, HF Live Monitor asks the child downloader to terminate and waits up to five seconds. If shutdown times out or the wait is interrupted again, it kills the child. The final process exit code is propagated to the calling shell.
+On the first Ctrl+C, HF Download Live Monitor asks the child downloader to terminate and waits up to five seconds. If shutdown times out or the wait is interrupted again, it kills the child. The final process exit code is propagated to the calling shell.
 
 ## Repository types and file selection
 
@@ -380,7 +380,7 @@ Selection order is:
 2. Include patterns constrain that set.
 3. Exclude patterns always win.
 
-Quote wildcard patterns so the shell does not expand them before HF Live Monitor receives them.
+Quote wildcard patterns so the shell does not expand them before HF Download Live Monitor receives them.
 
 ## Output formats
 
@@ -393,7 +393,7 @@ The default on a terminal is a live Rich table. It shows file progress, state, s
 ### Plain text
 
 ```console
-hf-live-monitor watch owner/repository --local-dir ./download --plain
+hf-download-live-monitor watch owner/repository --local-dir ./download --plain
 ```
 
 Plain text contains no cursor-control sequences and is selected automatically when standard output is redirected. Add `--ascii` for ASCII-only separators.
@@ -401,7 +401,7 @@ Plain text contains no cursor-control sequences and is selected automatically wh
 ### JSON
 
 ```console
-hf-live-monitor watch owner/repository --local-dir ./download --json --once > status.json
+hf-download-live-monitor watch owner/repository --local-dir ./download --json --once > status.json
 ```
 
 `--json` writes one JSON document per render. It is best paired with `--once`.
@@ -409,7 +409,7 @@ hf-live-monitor watch owner/repository --local-dir ./download --json --once > st
 ### JSON Lines
 
 ```console
-hf-live-monitor watch owner/repository --local-dir ./download --jsonl > progress.jsonl
+hf-download-live-monitor watch owner/repository --local-dir ./download --jsonl > progress.jsonl
 ```
 
 `--jsonl` writes one independent JSON object per line and is suitable for streaming automation. The current structured schema version is `1`; see [Structured output schema](json-schema.md).
@@ -441,7 +441,7 @@ Automation should treat any nonzero status as failure and preserve sanitized sta
 
 - PowerShell examples use `.\` for executables and virtual-environment activation.
 - Windows Terminal is recommended for the interactive table.
-- If script activation is restricted, use `.\.venv\Scripts\python.exe -m hf_live_monitor --help` rather than weakening system-wide execution policy.
+- If script activation is restricted, use `.\.venv\Scripts\python.exe -m hf_download_live_monitor --help` rather than weakening system-wide execution policy.
 - Very long repository paths are handled by supported Hugging Face versions, but a short destination such as `C:\Models\name` reduces compatibility risk.
 
 ### WSL
@@ -468,19 +468,19 @@ Automation should treat any nonzero status as failure and preserve sanitized sta
 pipx:
 
 ```console
-pipx upgrade hf-live-monitor
+pipx upgrade hf-download-live-monitor
 ```
 
 uv:
 
 ```console
-uv tool upgrade hf-live-monitor
+uv tool upgrade hf-download-live-monitor
 ```
 
 pip:
 
 ```console
-python -m pip install --upgrade hf-live-monitor
+python -m pip install --upgrade hf-download-live-monitor
 ```
 
 Standalone: download the newer release, verify its checksum, smoke-test `--help`, and then replace the older executable. Retain the prior verified binary until the new one works.
@@ -488,8 +488,8 @@ Standalone: download the newer release, verify its checksum, smoke-test `--help`
 After every update:
 
 ```console
-hf-live-monitor --help
-hf-live-monitor run --help
+hf-download-live-monitor --help
+hf-download-live-monitor run --help
 ```
 
 ### Downgrade
@@ -497,9 +497,9 @@ hf-live-monitor run --help
 Replace `X.Y.Z` with an available published version:
 
 ```console
-pipx install --force hf-live-monitor==X.Y.Z
-uv tool install --force hf-live-monitor==X.Y.Z
-python -m pip install --force-reinstall hf-live-monitor==X.Y.Z
+pipx install --force hf-download-live-monitor==X.Y.Z
+uv tool install --force hf-download-live-monitor==X.Y.Z
+python -m pip install --force-reinstall hf-download-live-monitor==X.Y.Z
 ```
 
 For a standalone installation, restore a previously verified release artifact. Review the changelog before downgrading because structured output or supported Hugging Face versions may differ.
@@ -509,33 +509,33 @@ For a standalone installation, restore a previously verified release artifact. R
 pipx:
 
 ```console
-pipx uninstall hf-live-monitor
+pipx uninstall hf-download-live-monitor
 ```
 
 uv:
 
 ```console
-uv tool uninstall hf-live-monitor
+uv tool uninstall hf-download-live-monitor
 ```
 
 pip:
 
 ```console
-python -m pip uninstall hf-live-monitor
+python -m pip uninstall hf-download-live-monitor
 ```
 
 Standalone: delete only the executable and its checksum file from the directory where you placed them.
 
-Uninstalling HF Live Monitor does not delete downloaded repositories, Hugging Face credentials, or the Hugging Face cache. Remove those separately only when you understand what data will be lost.
+Uninstalling HF Download Live Monitor does not delete downloaded repositories, Hugging Face credentials, or the Hugging Face cache. Remove those separately only when you understand what data will be lost.
 
 ## Troubleshooting
 
-### `hf-live-monitor` is not recognized
+### `hf-download-live-monitor` is not recognized
 
 - Open a new terminal after installing with pipx or uv.
 - Run `pipx ensurepath` when using pipx.
 - Confirm the correct virtual environment is active.
-- Locate competing installations with `Get-Command hf-live-monitor -All` or `command -v hf-live-monitor`.
+- Locate competing installations with `Get-Command hf-download-live-monitor -All` or `command -v hf-download-live-monitor`.
 
 ### `hf` is not recognized in run mode
 
@@ -552,12 +552,12 @@ Confirm `hf --help` works. Reinstall or update `huggingface_hub`, or pass the tr
 Run interactively and choose a process, or use:
 
 ```console
-hf-live-monitor attach --pid PROCESS_ID
+hf-download-live-monitor attach --pid PROCESS_ID
 ```
 
 ### `pid_not_found`
 
-The process may have exited, the PID may be wrong, or the command may not be a supported local-directory download. Discover again with `hf-live-monitor attach`.
+The process may have exited, the PID may be wrong, or the command may not be a supported local-directory download. Discover again with `hf-download-live-monitor attach`.
 
 ### `repository_not_found`
 
@@ -602,7 +602,7 @@ Official release binaries are built in clean environments. Do not distribute a b
 ## Privacy and security
 
 - No telemetry is collected.
-- HF Live Monitor does not store credentials.
+- HF Download Live Monitor does not store credentials.
 - Authentication is handled by the official Hugging Face library.
 - Token-bearing command options are discarded during attach parsing.
 - Structured output contains repository IDs and local destination paths, which may still be sensitive.
@@ -620,7 +620,7 @@ See the [Security policy](../SECURITY.md) for vulnerability reporting guidance.
 When requesting help, provide the smallest safe set of facts:
 
 ```console
-hf-live-monitor --help
+hf-download-live-monitor --help
 python --version
 hf version
 ```
@@ -628,7 +628,7 @@ hf version
 Also state:
 
 - Operating system and whether the process runs in Windows, WSL, a container, or macOS.
-- Installation method and HF Live Monitor version.
+- Installation method and HF Download Live Monitor version.
 - Command mode (`watch`, `attach`, or `run`) with tokens and private names removed.
 - Repository type and whether it is public, private, or gated.
 - Exact error code and sanitized message.
@@ -638,7 +638,7 @@ Do not attach environment dumps, complete process lists, authentication files, `
 ## Readiness checklist
 
 - [ ] `python --version` reports 3.10 or newer, or a verified standalone executable is available.
-- [ ] `hf-live-monitor --help` works.
+- [ ] `hf-download-live-monitor --help` works.
 - [ ] `hf --help` works when using `run`.
 - [ ] `hf auth whoami` succeeds when private or gated access is required.
 - [ ] The destination has enough disk space.

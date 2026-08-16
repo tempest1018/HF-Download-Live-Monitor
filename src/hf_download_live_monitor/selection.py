@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from fnmatch import fnmatchcase
 
-from hf_live_monitor.models import ManifestFile, MonitorError
+from hf_download_live_monitor.models import ManifestFile, MonitorError
 
 
 def _normalize(value: str) -> str:

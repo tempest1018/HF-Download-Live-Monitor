@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Any
 
-from hf_live_monitor.models import DownloadSpec, RepoType
-from hf_live_monitor.runner import ManagedDownload, build_hf_command
+from hf_download_live_monitor.models import DownloadSpec, RepoType
+from hf_download_live_monitor.runner import ManagedDownload, build_hf_command
 
 
 def test_build_hf_command_forwards_supported_options() -> None:

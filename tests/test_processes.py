@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from hf_live_monitor.processes import (
+from hf_download_live_monitor.processes import (
     PosixProcessProvider,
     WindowsProcessProvider,
     system_process_provider,

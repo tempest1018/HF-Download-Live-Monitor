@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a packaged, tested `hf-live-monitor watch` application that accurately monitors explicit Hugging Face model, dataset, or Space downloads on Windows, WSL, Linux, and macOS with interactive, plain, JSON, and JSONL output.
+**Goal:** Build a packaged, tested `hf-download-live-monitor watch` application that accurately monitors explicit Hugging Face model, dataset, or Space downloads on Windows, WSL, Linux, and macOS with interactive, plain, JSON, and JSONL output.
 
 **Architecture:** Normalize CLI input into immutable domain models, obtain and filter a repository manifest through public Hugging Face APIs, observe local files through an isolated compatibility layer, and feed deterministic observations into a state engine. Renderers consume immutable snapshots and never access processes, the network, or arbitrary filesystem paths.
 
@@ -23,18 +23,18 @@ Each phase leaves the repository usable and fully tested. Git commit steps are i
 ## File map
 
 - `pyproject.toml`: build metadata, dependencies, command entry point, and tool configuration.
-- `src/hf_live_monitor/__init__.py`: public package version access.
-- `src/hf_live_monitor/__main__.py`: `python -m hf_live_monitor` entry point.
-- `src/hf_live_monitor/cli.py`: Typer command surface and exit behavior.
-- `src/hf_live_monitor/models.py`: immutable specifications, observations, states, snapshots, and errors.
-- `src/hf_live_monitor/security.py`: secret redaction and contained path resolution.
-- `src/hf_live_monitor/selection.py`: repository filename and glob selection rules.
-- `src/hf_live_monitor/repository.py`: public Hub metadata adapter.
-- `src/hf_live_monitor/compat.py`: local-dir cache-path compatibility.
-- `src/hf_live_monitor/filesystem.py`: race-resistant filesystem observation.
-- `src/hf_live_monitor/engine.py`: deterministic rates, ETAs, states, and aggregate calculations.
-- `src/hf_live_monitor/renderers.py`: interactive, plain, JSON, and JSONL rendering.
-- `src/hf_live_monitor/app.py`: watch-loop orchestration and retry policy.
+- `src/hf_download_live_monitor/__init__.py`: public package version access.
+- `src/hf_download_live_monitor/__main__.py`: `python -m hf_download_live_monitor` entry point.
+- `src/hf_download_live_monitor/cli.py`: Typer command surface and exit behavior.
+- `src/hf_download_live_monitor/models.py`: immutable specifications, observations, states, snapshots, and errors.
+- `src/hf_download_live_monitor/security.py`: secret redaction and contained path resolution.
+- `src/hf_download_live_monitor/selection.py`: repository filename and glob selection rules.
+- `src/hf_download_live_monitor/repository.py`: public Hub metadata adapter.
+- `src/hf_download_live_monitor/compat.py`: local-dir cache-path compatibility.
+- `src/hf_download_live_monitor/filesystem.py`: race-resistant filesystem observation.
+- `src/hf_download_live_monitor/engine.py`: deterministic rates, ETAs, states, and aggregate calculations.
+- `src/hf_download_live_monitor/renderers.py`: interactive, plain, JSON, and JSONL rendering.
+- `src/hf_download_live_monitor/app.py`: watch-loop orchestration and retry policy.
 - `tests/`: focused unit and integration tests mirroring package responsibilities.
 - `README.md`, `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md`: distribution documentation.
 - `.github/workflows/ci.yml`: cross-platform validation and package smoke tests.
@@ -43,9 +43,9 @@ Each phase leaves the repository usable and fully tested. Git commit steps are i
 
 **Files:**
 - Create: `pyproject.toml`
-- Create: `src/hf_live_monitor/__init__.py`
-- Create: `src/hf_live_monitor/__main__.py`
-- Create: `src/hf_live_monitor/cli.py`
+- Create: `src/hf_download_live_monitor/__init__.py`
+- Create: `src/hf_download_live_monitor/__main__.py`
+- Create: `src/hf_download_live_monitor/cli.py`
 - Create: `tests/test_cli.py`
 
 - [ ] **Step 1: Write a failing CLI smoke test**
@@ -53,7 +53,7 @@ Each phase leaves the repository usable and fully tested. Git commit steps are i
 ```python
 from typer.testing import CliRunner
 
-from hf_live_monitor.cli import cli
+from hf_download_live_monitor.cli import cli
 
 
 runner = CliRunner()
@@ -69,11 +69,11 @@ def test_help_exposes_watch_command() -> None:
 
 Run: `python -m pytest tests/test_cli.py -v`
 
-Expected: collection fails with `ModuleNotFoundError: No module named 'hf_live_monitor'`.
+Expected: collection fails with `ModuleNotFoundError: No module named 'hf_download_live_monitor'`.
 
 - [ ] **Step 3: Add package metadata and the minimal command**
 
-Define Hatchling metadata in `pyproject.toml`, require Python `>=3.10`, add runtime dependencies `huggingface-hub>=0.27,<2`, `rich>=13.9,<15`, `typer>=0.15,<1`, and expose `hf-live-monitor = "hf_live_monitor.cli:run"`. Add test, lint, typing, and build dependencies under a `dev` optional dependency. Configure pytest with `pythonpath = ["src"]`, Ruff for Python 3.10, and Pyright for strict checking of `src/hf_live_monitor`.
+Define Hatchling metadata in `pyproject.toml`, require Python `>=3.10`, add runtime dependencies `huggingface-hub>=0.27,<2`, `rich>=13.9,<15`, `typer>=0.15,<1`, and expose `hf-download-live-monitor = "hf_download_live_monitor.cli:run"`. Add test, lint, typing, and build dependencies under a `dev` optional dependency. Configure pytest with `pythonpath = ["src"]`, Ruff for Python 3.10, and Pyright for strict checking of `src/hf_download_live_monitor`.
 
 Implement this initial command surface:
 
@@ -99,12 +99,12 @@ Make `__main__.py` call `run()` and expose a static development version from `__
 
 Run: `python -m pip install -e ".[dev]"` followed by `python -m pytest tests/test_cli.py -v`.
 
-Expected: one passing test and `hf-live-monitor --help` lists `watch`.
+Expected: one passing test and `hf-download-live-monitor --help` lists `watch`.
 
 ### Task 2: Define stable domain models
 
 **Files:**
-- Create: `src/hf_live_monitor/models.py`
+- Create: `src/hf_download_live_monitor/models.py`
 - Create: `tests/test_models.py`
 
 - [ ] **Step 1: Write tests for normalized immutable models**
@@ -115,7 +115,7 @@ Test that `RepoType.parse("dataset")` returns `RepoType.DATASET`, invalid values
 
 Run: `python -m pytest tests/test_models.py -v`
 
-Expected: collection fails because `hf_live_monitor.models` does not exist.
+Expected: collection fails because `hf_download_live_monitor.models` does not exist.
 
 - [ ] **Step 3: Implement the domain types**
 
@@ -153,14 +153,14 @@ Also define `ManifestFile`, `FileObservation`, `FileProgress`, `ProgressSnapshot
 
 - [ ] **Step 4: Run model tests and static typing**
 
-Run: `python -m pytest tests/test_models.py -v` and `python -m pyright src/hf_live_monitor/models.py`.
+Run: `python -m pytest tests/test_models.py -v` and `python -m pyright src/hf_download_live_monitor/models.py`.
 
 Expected: all tests pass and Pyright reports zero errors.
 
 ### Task 3: Add credential redaction and safe path resolution
 
 **Files:**
-- Create: `src/hf_live_monitor/security.py`
+- Create: `src/hf_download_live_monitor/security.py`
 - Create: `tests/test_security.py`
 
 - [ ] **Step 1: Write security tests**
@@ -179,14 +179,14 @@ Implement `redact_args(args: Sequence[str]) -> tuple[str, ...]`, `redact_text(va
 
 - [ ] **Step 4: Run security tests and Ruff**
 
-Run: `python -m pytest tests/test_security.py -v` and `python -m ruff check src/hf_live_monitor/security.py tests/test_security.py`.
+Run: `python -m pytest tests/test_security.py -v` and `python -m ruff check src/hf_download_live_monitor/security.py tests/test_security.py`.
 
 Expected: all cases pass with no lint findings.
 
 ### Task 4: Implement requested-file selection
 
 **Files:**
-- Create: `src/hf_live_monitor/selection.py`
+- Create: `src/hf_download_live_monitor/selection.py`
 - Create: `tests/test_selection.py`
 
 - [ ] **Step 1: Write selection tests**
@@ -224,7 +224,7 @@ Expected: all tests pass.
 ### Task 5: Add the public Hugging Face metadata adapter
 
 **Files:**
-- Create: `src/hf_live_monitor/repository.py`
+- Create: `src/hf_download_live_monitor/repository.py`
 - Create: `tests/test_repository.py`
 
 - [ ] **Step 1: Write adapter tests with a fake API**
@@ -250,8 +250,8 @@ Expected: all tests pass and no test performs an HTTP request.
 ### Task 6: Isolate cache compatibility and filesystem observation
 
 **Files:**
-- Create: `src/hf_live_monitor/compat.py`
-- Create: `src/hf_live_monitor/filesystem.py`
+- Create: `src/hf_download_live_monitor/compat.py`
+- Create: `src/hf_download_live_monitor/filesystem.py`
 - Create: `tests/test_compat.py`
 - Create: `tests/test_filesystem.py`
 
@@ -282,7 +282,7 @@ Expected: all tests pass.
 ### Task 7: Build the deterministic progress engine
 
 **Files:**
-- Create: `src/hf_live_monitor/engine.py`
+- Create: `src/hf_download_live_monitor/engine.py`
 - Create: `tests/test_engine.py`
 
 - [ ] **Step 1: Write state, rate, and ETA tests**
@@ -308,7 +308,7 @@ Expected: all tests pass.
 ### Task 8: Implement stable structured and plain renderers
 
 **Files:**
-- Create: `src/hf_live_monitor/renderers.py`
+- Create: `src/hf_download_live_monitor/renderers.py`
 - Create: `tests/test_renderers.py`
 
 - [ ] **Step 1: Write renderer contract tests**
@@ -334,9 +334,9 @@ Expected: all renderer contracts pass.
 ### Task 9: Orchestrate watch mode and retry behavior
 
 **Files:**
-- Create: `src/hf_live_monitor/app.py`
+- Create: `src/hf_download_live_monitor/app.py`
 - Create: `tests/test_app.py`
-- Modify: `src/hf_live_monitor/cli.py`
+- Modify: `src/hf_download_live_monitor/cli.py`
 - Modify: `tests/test_cli.py`
 
 - [ ] **Step 1: Write orchestration tests with injected dependencies**
@@ -392,7 +392,7 @@ Expected: failures list the absent distribution documents.
 
 - [ ] **Step 3: Write complete user and contributor documentation**
 
-Document installation through pipx, uv, and pip; model/dataset/Space examples; explicit filenames and filters; output modes; platform behavior; privacy; exit codes; troubleshooting; development setup; architecture boundaries; structured schema versioning; and the roadmap for attach and run modes. Use the standard MIT license text with year 2026 and copyright holder `HF Live Monitor contributors`.
+Document installation through pipx, uv, and pip; model/dataset/Space examples; explicit filenames and filters; output modes; platform behavior; privacy; exit codes; troubleshooting; development setup; architecture boundaries; structured schema versioning; and the roadmap for attach and run modes. Use the standard MIT license text with year 2026 and copyright holder `HF Download Live Monitor contributors`.
 
 - [ ] **Step 4: Add safe repository exclusions**
 
@@ -412,11 +412,11 @@ Expected: all documentation contracts and tests pass.
 
 - [ ] **Step 1: Add a package metadata test**
 
-Assert the distribution exposes `hf-live-monitor`, required files are included in the source distribution, and imports do not perform network or filesystem writes.
+Assert the distribution exposes `hf-download-live-monitor`, required files are included in the source distribution, and imports do not perform network or filesystem writes.
 
 - [ ] **Step 2: Implement the CI workflow**
 
-Create jobs for Ruff and Pyright plus a test matrix for Python 3.10 through 3.13 on Windows and Ubuntu, with a macOS smoke job. Build wheel and source distributions once, run `twine check`, install each artifact into a clean environment, execute `hf-live-monitor --help`, and upload artifacts only after all validation succeeds. Grant workflow contents read-only permissions.
+Create jobs for Ruff and Pyright plus a test matrix for Python 3.10 through 3.13 on Windows and Ubuntu, with a macOS smoke job. Build wheel and source distributions once, run `twine check`, install each artifact into a clean environment, execute `hf-download-live-monitor --help`, and upload artifacts only after all validation succeeds. Grant workflow contents read-only permissions.
 
 - [ ] **Step 3: Run every local quality gate**
 
@@ -435,7 +435,7 @@ Expected: every command exits zero.
 
 - [ ] **Step 4: Test the built artifact in an isolated environment**
 
-Create a temporary virtual environment outside the source tree, install the built wheel, run `hf-live-monitor --help`, run a JSON `--once` invocation against a fake-adapter integration fixture, then remove only that verified temporary environment.
+Create a temporary virtual environment outside the source tree, install the built wheel, run `hf-download-live-monitor --help`, run a JSON `--once` invocation against a fake-adapter integration fixture, then remove only that verified temporary environment.
 
 Expected: installed-command behavior matches source-tree tests and the repository remains free of generated runtime data other than ignored `dist` and tool caches.
 
@@ -453,7 +453,7 @@ Write a test that reads the preserved checksum, hashes the prototype bytes with 
 
 - [ ] **Step 2: Move the two original files with their contents unchanged**
 
-Use filesystem moves scoped to the two exact files. Update the README to label them historical and direct all users to `hf-live-monitor`.
+Use filesystem moves scoped to the two exact files. Update the README to label them historical and direct all users to `hf-download-live-monitor`.
 
 - [ ] **Step 3: Run the provenance and complete validation suites**
 
@@ -463,4 +463,4 @@ Expected: checksum preservation passes and every project validation command exit
 
 ## Completion criteria
 
-The phase is complete only when the installed `hf-live-monitor watch` command works from a clean wheel installation; models, datasets, Spaces, revisions, explicit files, include/exclude filters, resumptions, partials, finalization, and inconsistent files are covered by deterministic tests; interactive, plain, JSON, and JSONL output contracts pass; credential and containment tests pass; and Windows, Linux, and macOS CI definitions cover the advertised explicit-watch support.
+The phase is complete only when the installed `hf-download-live-monitor watch` command works from a clean wheel installation; models, datasets, Spaces, revisions, explicit files, include/exclude filters, resumptions, partials, finalization, and inconsistent files are covered by deterministic tests; interactive, plain, JSON, and JSONL output contracts pass; credential and containment tests pass; and Windows, Linux, and macOS CI definitions cover the advertised explicit-watch support.

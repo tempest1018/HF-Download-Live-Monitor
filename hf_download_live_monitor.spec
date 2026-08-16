@@ -1,7 +1,7 @@
-# PyInstaller specification for the hf_live_monitor.__main__ entry point.
+# PyInstaller specification for the hf_download_live_monitor.__main__ entry point.
 
 analysis = Analysis(
-    ["src/hf_live_monitor/__main__.py"],
+    ["src/hf_download_live_monitor/__main__.py"],
     pathex=["src"],
     binaries=[],
     datas=[],
@@ -19,7 +19,7 @@ executable = EXE(
     analysis.binaries,
     analysis.datas,
     [],
-    name="hf-live-monitor",
+    name="hf-download-live-monitor",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -56,8 +56,8 @@ jobs:
       - name: Smoke test executable
         shell: bash
         run: |
-          exe="dist/hf-live-monitor"
-          if [[ "$RUNNER_OS" == "Windows" ]]; then exe="dist/hf-live-monitor.exe"; fi
+          exe="dist/hf-download-live-monitor"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then exe="dist/hf-download-live-monitor.exe"; fi
           "$exe" --help
           "$exe" attach --help
           "$exe" run --help
@@ -65,7 +65,7 @@ jobs:
         with:
           name: standalone-${{ runner.os }}
           path: |
-            dist/hf-live-monitor*
+            dist/hf-download-live-monitor*
 
   github-release:
     needs: [verify-and-build-python, standalone]

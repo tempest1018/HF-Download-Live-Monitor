@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from hf_live_monitor.hf_command import parse_download_process
-from hf_live_monitor.models import RepoType
-from hf_live_monitor.processes import ProcessRecord
+from hf_download_live_monitor.hf_command import parse_download_process
+from hf_download_live_monitor.models import RepoType
+from hf_download_live_monitor.processes import ProcessRecord
 
 
 def record(*args: str, cwd: Path = Path("/work")) -> ProcessRecord:

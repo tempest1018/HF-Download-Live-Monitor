@@ -2,7 +2,7 @@ import base64
 import hashlib
 from pathlib import Path
 
-from hf_live_monitor.compat import incomplete_candidates, short_cache_hash
+from hf_download_live_monitor.compat import incomplete_candidates, short_cache_hash
 
 
 def test_short_cache_hash_matches_hugging_face_convention() -> None:

@@ -23,8 +23,8 @@
 ### Task 2: Rename source and packaging surfaces
 
 **Files:**
-- Move: `src/hf_live_monitor` to `src/hf_download_live_monitor`
-- Move: `hf_live_monitor.spec` to `hf_download_live_monitor.spec`
+- Move: `src/hf_download_live_monitor` to `src/hf_download_live_monitor`
+- Move: `hf_download_live_monitor.spec` to `hf_download_live_monitor.spec`
 - Modify: `pyproject.toml`
 - Modify: `scripts/build_standalone.py`
 - Modify: all Python imports under `src` and `tests`
@@ -50,7 +50,7 @@
 - Modify: current design and plan documents under `docs/superpowers`
 
 - [ ] Update commands, artifact names, module invocations, prose, and installation instructions.
-- [ ] Add a migration note that explicitly tells existing users to uninstall `hf-live-monitor` and install `hf-download-live-monitor`.
+- [ ] Add a migration note that explicitly tells existing users to uninstall `hf-download-live-monitor` and install `hf-download-live-monitor`.
 - [ ] Preserve `docs/prototypes` bytes and recorded checksum.
 - [ ] Run the documentation and release-asset tests.
 

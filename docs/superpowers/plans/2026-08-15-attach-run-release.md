@@ -13,8 +13,8 @@
 ### Task 1: Normalize and parse Hugging Face download processes
 
 **Files:**
-- Create: `src/hf_live_monitor/processes.py`
-- Create: `src/hf_live_monitor/hf_command.py`
+- Create: `src/hf_download_live_monitor/processes.py`
+- Create: `src/hf_download_live_monitor/hf_command.py`
 - Create: `tests/test_hf_command.py`
 
 - [ ] Write failing tests covering `hf download`, executable paths, `python -m huggingface_hub.commands.huggingface_cli download`, separated and equals-style options, model/dataset/Space types, revision, filenames, include/exclude filters, relative local directories, unrelated commands, and token redaction.
@@ -25,7 +25,7 @@
 ### Task 2: Discover processes on Windows and POSIX
 
 **Files:**
-- Modify: `src/hf_live_monitor/processes.py`
+- Modify: `src/hf_download_live_monitor/processes.py`
 - Create: `tests/test_processes.py`
 
 - [ ] Write failing fixture-driven tests for Linux `/proc/<pid>/cmdline` and `/proc/<pid>/cwd`, disappearing processes, permission failures, Windows CIM JSON records, malformed records, and provider selection.
@@ -37,35 +37,35 @@
 ### Task 3: Add attach selection and monitoring
 
 **Files:**
-- Create: `src/hf_live_monitor/attach.py`
-- Modify: `src/hf_live_monitor/cli.py`
+- Create: `src/hf_download_live_monitor/attach.py`
+- Modify: `src/hf_download_live_monitor/cli.py`
 - Create: `tests/test_attach.py`
 - Modify: `tests/test_cli.py`
 
 - [ ] Write failing tests for no matches, one automatic match, PID selection, ambiguous non-interactive selection, interactive numeric selection, and `--all` validation.
 - [ ] Run tests and confirm missing attach behavior.
 - [ ] Implement discovery-to-candidate orchestration with stable PID ordering and safe summaries. Reuse `WatchApplication` for a selected process; support `--pid`; reject simultaneous `--pid` and `--all`. Initial `--all` emits a classified limitation unless more than one renderer can be safely coordinated.
-- [ ] Add `hf-live-monitor attach` with the common renderer and timing options.
+- [ ] Add `hf-download-live-monitor attach` with the common renderer and timing options.
 - [ ] Run focused and full validation.
 
 ### Task 4: Implement managed download launching
 
 **Files:**
-- Create: `src/hf_live_monitor/runner.py`
-- Modify: `src/hf_live_monitor/cli.py`
+- Create: `src/hf_download_live_monitor/runner.py`
+- Modify: `src/hf_download_live_monitor/cli.py`
 - Create: `tests/test_runner.py`
 - Modify: `tests/test_cli.py`
 
 - [ ] Write failing tests around an injected `Popen` factory for exact argument forwarding, mandatory `--local-dir`, repository type, revision and filters, token-safe errors, successful and failing exit propagation, graceful first interruption, and forced repeated interruption.
 - [ ] Run focused tests and confirm missing runner behavior.
 - [ ] Implement `ManagedDownload` with injected process factory. Launch `hf download`, track the exact child, run monitoring concurrently through a small watcher thread, terminate on first interrupt, kill on repeated interrupt, join cleanly, and return the child exit code.
-- [ ] Add `hf-live-monitor run REPO --local-dir PATH [OPTIONS]` using explicit supported download options rather than unsafe arbitrary shell text.
+- [ ] Add `hf-download-live-monitor run REPO --local-dir PATH [OPTIONS]` using explicit supported download options rather than unsafe arbitrary shell text.
 - [ ] Run focused tests, full tests, Ruff, and Pyright.
 
 ### Task 5: Add standalone and trusted-release workflows
 
 **Files:**
-- Create: `hf_live_monitor.spec`
+- Create: `hf_download_live_monitor.spec`
 - Create: `.github/workflows/release.yml`
 - Create: `scripts/build_standalone.py`
 - Modify: `pyproject.toml`
