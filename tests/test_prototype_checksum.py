@@ -9,4 +9,7 @@ def test_preserved_prototype_matches_recorded_checksum() -> None:
         .read_text(encoding="utf-8")
         .strip()
     )
-    assert hashlib.sha256(prototype.read_bytes()).hexdigest() == expected
+    # Git may materialize this historical text file with CRLF on Windows. The
+    # recorded digest protects its content, independent of checkout policy.
+    content = prototype.read_bytes().replace(b"\r\n", b"\n")
+    assert hashlib.sha256(content).hexdigest() == expected

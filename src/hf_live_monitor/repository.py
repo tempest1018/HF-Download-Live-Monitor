@@ -32,7 +32,7 @@ class HubRepository:
         except RepositoryNotFoundError as exc:
             raise self._error("repository_not_found", exc) from exc
         except HfHubHTTPError as exc:
-            status = exc.response.status_code if exc.response is not None else None
+            status = exc.response.status_code
             code = "rate_limited" if status == 429 else "hub_error"
             raise self._error(code, exc, recoverable=status == 429 or (status or 0) >= 500) from exc
 
