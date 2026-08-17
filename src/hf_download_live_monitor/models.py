@@ -32,6 +32,22 @@ class FileState(str, Enum):
     FINALIZING = "finalizing"
     COMPLETE = "complete"
     INCONSISTENT = "inconsistent"
+    SIZE_MATCHED = "size_matched"
+    VERIFYING = "verifying"
+    VERIFIED = "verified"
+    COMPLETE_UNVERIFIED = "complete_unverified"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class FileIdentity:
+    size: int
+    modified_ns: int
+
+    def __post_init__(self) -> None:
+        _validate_bytes(self.size)
+        if self.modified_ns < 0:
+            raise ValueError("file identity values must be non-negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +101,7 @@ class FileObservation:
     final_bytes: int | None
     partial_bytes: int | None
     observed_at: float
+    identity: FileIdentity | None = None
 
     def __post_init__(self) -> None:
         _validate_filename(self.filename)

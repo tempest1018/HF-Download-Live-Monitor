@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import stat as stat_module
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
 
 from hf_download_live_monitor.compat import short_cache_hash
-from hf_download_live_monitor.models import DownloadSpec, FileObservation, ManifestFile
+from hf_download_live_monitor.models import (
+    DownloadSpec,
+    FileIdentity,
+    FileObservation,
+    ManifestFile,
+)
 from hf_download_live_monitor.security import resolve_repo_path
 
 
@@ -20,7 +26,8 @@ class FileSystemObserver:
         partials = self._index_partials(spec.local_dir)
         observations: list[FileObservation] = []
         for item in manifest:
-            final_size = _safe_size(resolve_repo_path(spec.local_dir, item.filename))
+            identity = _safe_identity(resolve_repo_path(spec.local_dir, item.filename))
+            final_size = identity.size if identity is not None else None
             repo_path = PurePosixPath(item.filename.replace("\\", "/"))
             key = (
                 repo_path.parent.as_posix(),
@@ -36,6 +43,7 @@ class FileSystemObserver:
                     final_bytes=final_size,
                     partial_bytes=partial_size,
                     observed_at=now,
+                    identity=identity,
                 )
             )
         return tuple(observations)
@@ -66,8 +74,11 @@ class FileSystemObserver:
         return max(candidates)[1] if candidates else None
 
 
-def _safe_size(path: Path) -> int | None:
+def _safe_identity(path: Path) -> FileIdentity | None:
     try:
-        return path.stat().st_size if path.is_file() else None
+        result = path.stat()
+        if not stat_module.S_ISREG(result.st_mode):
+            return None
+        return FileIdentity(result.st_size, result.st_mtime_ns)
     except OSError:
         return None
