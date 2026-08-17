@@ -86,6 +86,17 @@ def test_manifest_applies_requested_file_filters() -> None:
     assert [item.filename for item in HubRepository(api).manifest(spec)] == ["b.json"]
 
 
+def test_prepare_classifies_missing_requested_file_as_repository_error() -> None:
+    api = FakeApi([SimpleNamespace(rfilename="present.bin", size=1, lfs=None)])
+    spec = DownloadSpec("owner/repo", Path("out"), filenames=("absent.bin",))
+
+    with pytest.raises(MonitorError) as caught:
+        HubRepository(api).prepare(spec)
+
+    assert caught.value.code == "requested_file_missing"
+    assert caught.value.category is ErrorCategory.REPOSITORY
+
+
 def test_prepare_pins_requested_revision_to_resolved_sha() -> None:
     api = FakeApi([SimpleNamespace(rfilename="file.bin", size=12, lfs=None)])
     requested = DownloadSpec("owner/repo", Path("out"), revision="main")

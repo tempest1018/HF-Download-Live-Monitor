@@ -84,9 +84,17 @@ class HubRepository:
                 recoverable=True,
                 category=ErrorCategory.REPOSITORY,
             )
-        manifest = select_manifest(
-            files, filenames=spec.filenames, includes=spec.includes, excludes=spec.excludes
-        )
+        try:
+            manifest = select_manifest(
+                files, filenames=spec.filenames, includes=spec.includes, excludes=spec.excludes
+            )
+        except MonitorError as exc:
+            raise MonitorError(
+                exc.code,
+                exc.message,
+                exc.recoverable,
+                ErrorCategory.REPOSITORY,
+            ) from exc
         return DownloadPlan(
             spec=replace(spec, revision=resolved_revision),
             requested_revision=spec.revision,
