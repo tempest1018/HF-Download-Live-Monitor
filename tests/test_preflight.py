@@ -74,9 +74,9 @@ def test_insufficient_space_is_destination_error(tmp_path: Path) -> None:
         validate_destination(_plan(root, ("model.bin", 3000)), disk_usage=_usage(3299))
     assert caught.value.category is ErrorCategory.DESTINATION
     assert caught.value.code == "insufficient_disk_space"
-    assert "3300" in caught.value.message
-    assert "3299" in caught.value.message
-    assert str(root.resolve()) in caught.value.message
+    assert "required=3300" in caught.value.message
+    assert "available=3299" in caught.value.message
+    assert f"destination={root.resolve()}" in caught.value.message
 
 
 def test_create_failure_is_redacted_destination_error(tmp_path: Path) -> None:
@@ -101,6 +101,45 @@ def test_probe_is_cleaned_up_when_disk_usage_fails(tmp_path: Path) -> None:
     assert caught.value.code == "destination_unwritable"
     assert "hf_secret" not in caught.value.message
     assert list(root.iterdir()) == []
+
+
+def test_probe_is_cleaned_up_when_probe_write_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "out"
+
+    def fail_after_create(self: Path, *args: object, **kwargs: object):
+        self.touch()
+        raise OSError("token=hf_secret")
+
+    monkeypatch.setattr(Path, "open", fail_after_create)
+
+    with pytest.raises(MonitorError) as caught:
+        validate_destination(_plan(root, ("x", 1)), disk_usage=_usage(2))
+
+    assert caught.value.category is ErrorCategory.DESTINATION
+    assert caught.value.code == "destination_unwritable"
+    assert "hf_secret" not in caught.value.message
+    assert list(root.iterdir()) == []
+
+
+def test_destination_resolution_failure_is_redacted_destination_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    plan = _plan(tmp_path / "out", ("x", 1))
+
+    def fail_resolve(self: Path, *args: object, **kwargs: object) -> Path:
+        raise OSError("token=hf_secret")
+
+    monkeypatch.setattr(Path, "resolve", fail_resolve)
+
+    with pytest.raises(MonitorError) as caught:
+        validate_destination(plan, disk_usage=_usage(2))
+
+    assert caught.value.category is ErrorCategory.DESTINATION
+    assert caught.value.code == "destination_unwritable"
+    assert "hf_secret" not in caught.value.message
+    assert "<redacted>" in caught.value.message
 
 
 def test_unsafe_manifest_path_is_destination_error(tmp_path: Path) -> None:

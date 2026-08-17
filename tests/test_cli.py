@@ -146,3 +146,36 @@ def test_run_preflight_failure_never_starts_child_and_uses_stable_exit_code(
 
     assert result.exit_code == exit_code_for(ErrorCategory.DESTINATION)
     assert "insufficient_disk_space" in result.stderr
+
+
+def test_run_launch_failure_is_redacted_downloader_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    plan = DownloadPlan(
+        DownloadSpec("owner/repo", tmp_path, revision="a" * 40),
+        "main",
+        (ManifestFile("model.bin", 1),),
+    )
+
+    class Repository:
+        def prepare(self, spec: DownloadSpec) -> DownloadPlan:
+            return plan
+
+    class Download:
+        def __init__(self, application: object) -> None:
+            pass
+
+        def run(self, spec: DownloadSpec, *, executable: str, manifest: object) -> int:
+            raise OSError("token=hf_secret")
+
+    monkeypatch.setattr(cli_module, "HubRepository", Repository)
+    monkeypatch.setattr(cli_module, "validate_destination", lambda _: None)
+    monkeypatch.setattr(cli_module, "_make_application", lambda **_: object())
+    monkeypatch.setattr(cli_module, "ManagedDownload", Download)
+
+    result = runner.invoke(cli, ["run", "owner/repo", "--local-dir", str(tmp_path)])
+
+    assert result.exit_code == exit_code_for(ErrorCategory.DOWNLOADER)
+    assert "launch_failed" in result.stderr
+    assert "hf_secret" not in result.stderr
+    assert "<redacted>" in result.stderr

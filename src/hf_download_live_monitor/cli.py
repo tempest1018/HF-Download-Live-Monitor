@@ -12,7 +12,7 @@ from rich.console import Console
 from hf_download_live_monitor.app import WatchApplication
 from hf_download_live_monitor.attach import discover_downloads, select_download
 from hf_download_live_monitor.engine import ProgressEngine
-from hf_download_live_monitor.errors import exit_code_for
+from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
 from hf_download_live_monitor.filesystem import FileSystemObserver
 from hf_download_live_monitor.models import DownloadSpec, MonitorError, RepoType
 from hf_download_live_monitor.preflight import validate_destination
@@ -25,6 +25,7 @@ from hf_download_live_monitor.renderers import (
 )
 from hf_download_live_monitor.repository import HubRepository
 from hf_download_live_monitor.runner import ManagedDownload
+from hf_download_live_monitor.security import redact_text
 
 cli = typer.Typer(no_args_is_help=True, help="Monitor Hugging Face downloads.")
 
@@ -102,7 +103,7 @@ def run_download(
     _validate_outputs(plain, json_output, jsonl)
     spec = DownloadSpec(
         repo=repo,
-        local_dir=local_dir.resolve(),
+        local_dir=local_dir,
         repo_type=repo_type,
         revision=revision,
         filenames=tuple(filename or ()),
@@ -127,7 +128,13 @@ def run_download(
     except MonitorError as exc:
         _exit_for_error(exc)
     except OSError as exc:
-        _exit_for_error(MonitorError("launch_failed", str(exc)))
+        _exit_for_error(
+            MonitorError(
+                "launch_failed",
+                redact_text(str(exc)),
+                category=ErrorCategory.DOWNLOADER,
+            )
+        )
     if code:
         raise typer.Exit(code=code)
 

@@ -37,9 +37,10 @@ def validate_destination(
     if not math.isfinite(reserve_ratio) or reserve_ratio < 0:
         raise ValueError("reserve ratio must be finite and non-negative")
 
-    destination = plan.spec.local_dir.resolve()
+    destination = plan.spec.local_dir
     probe: Path | None = None
     try:
+        destination = destination.resolve()
         destination.mkdir(parents=True, exist_ok=True)
         if not destination.is_dir():
             raise OSError("destination is not a directory")
@@ -86,8 +87,8 @@ def validate_destination(
         safe_destination = redact_text(str(destination))
         raise MonitorError(
             "insufficient_disk_space",
-            f"destination {safe_destination} requires {required} free bytes "
-            f"but only {available} are available; free space or choose another destination",
+            f"required={required} available={available} destination={safe_destination}; "
+            "free space or choose another destination",
             category=ErrorCategory.DESTINATION,
         )
     return PreflightResult(required, available, reserve)
