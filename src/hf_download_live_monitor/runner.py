@@ -43,8 +43,7 @@ def build_hf_command(spec: DownloadSpec, *, executable: str = "hf") -> tuple[str
     ]
     if spec.repo_type is not RepoType.MODEL:
         command.extend(("--repo-type", spec.repo_type.value))
-    if spec.revision != "main":
-        command.extend(("--revision", spec.revision))
+    command.extend(("--revision", spec.revision))
     for pattern in spec.includes:
         command.extend(("--include", pattern))
     for pattern in spec.excludes:
@@ -70,7 +69,8 @@ class ManagedDownload:
         manifest: tuple[ManifestFile, ...] | None = None,
         plan: DownloadPlan | None = None,
     ) -> int:
-        process = self._process_factory(build_hf_command(spec, executable=executable))
+        command_spec = plan.spec if plan is not None else spec
+        process = self._process_factory(build_hf_command(command_spec, executable=executable))
         try:
             monitor_code = self._application.run(
                 spec,
@@ -81,13 +81,42 @@ class ManagedDownload:
             )
             child_code = process.wait()
             return monitor_code or child_code
-        except KeyboardInterrupt:
-            process.terminate()
+        except BaseException as error:
             try:
-                return process.wait(timeout=5.0)
-            except (subprocess.TimeoutExpired, KeyboardInterrupt):
-                process.kill()
-                return process.wait()
+                _stop_and_reap(process)
+            except BaseException as cleanup_error:
+                _attach_cleanup_note(error, cleanup_error)
+            raise
+
+
+def _stop_and_reap(process: ChildProcess, grace: float = 5.0) -> int:
+    if process.poll() is not None:
+        return process.wait()
+    try:
+        process.terminate()
+    except ProcessLookupError:
+        return process.wait()
+    try:
+        return process.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        return process.wait()
+    except KeyboardInterrupt as interrupt:
+        try:
+            process.kill()
+            process.wait()
+        except BaseException as cleanup_error:
+            _attach_cleanup_note(interrupt, cleanup_error)
+        raise
+
+
+def _attach_cleanup_note(error: BaseException, cleanup_error: BaseException) -> None:
+    diagnostic = f"Downloader cleanup also failed ({type(cleanup_error).__name__})."
+    add_note = getattr(error, "add_note", None)
+    if add_note is not None:
+        add_note(diagnostic)
+    else:
+        error.__context__ = RuntimeError(diagnostic)
 
 
 def _start_process(command: tuple[str, ...]) -> ChildProcess:
