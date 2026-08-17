@@ -43,29 +43,59 @@ jobs:
   standalone:
     needs: verify-and-build-python
     strategy:
+      fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          - runner: windows-latest
+            os: windows
+            arch: x86_64
+            python_arch: x64
+            artifact: hf-download-live-monitor-windows-x86_64.exe
+          - runner: windows-11-arm
+            os: windows
+            arch: arm64
+            python_arch: arm64
+            artifact: hf-download-live-monitor-windows-arm64.exe
+          - runner: ubuntu-latest
+            os: linux
+            arch: x86_64
+            python_arch: x64
+            artifact: hf-download-live-monitor-linux-x86_64
+          - runner: ubuntu-24.04-arm
+            os: linux
+            arch: arm64
+            python_arch: arm64
+            artifact: hf-download-live-monitor-linux-arm64
+          - runner: macos-15-intel
+            os: macos
+            arch: x86_64
+            python_arch: x64
+            artifact: hf-download-live-monitor-macos-x86_64
+          - runner: macos-15
+            os: macos
+            arch: arm64
+            python_arch: arm64
+            artifact: hf-download-live-monitor-macos-arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
+          architecture: ${{ matrix.python_arch }}
       - run: python -m pip install -e ".[standalone]"
+      - name: Assert runner architecture
+        run: python -c "import platform; from scripts.build_standalone import normalized_architecture; assert normalized_architecture(platform.machine()) == '${{ matrix.arch }}', platform.machine()"
       - run: python scripts/build_standalone.py
       - name: Smoke test executable
-        shell: bash
         run: |
-          exe="dist/hf-download-live-monitor"
-          if [[ "$RUNNER_OS" == "Windows" ]]; then exe="dist/hf-download-live-monitor.exe"; fi
-          "$exe" --help
-          "$exe" attach --help
-          "$exe" run --help
+          python -c "import subprocess; executable = r'dist/${{ matrix.artifact }}'; subprocess.run([executable, '--help'], check=True); subprocess.run([executable, 'attach', '--help'], check=True); subprocess.run([executable, 'run', '--help'], check=True)"
       - uses: actions/upload-artifact@v7
         with:
-          name: standalone-${{ runner.os }}
+          name: standalone-${{ matrix.os }}-${{ matrix.arch }}
           path: |
-            dist/hf-download-live-monitor*
+            dist/${{ matrix.artifact }}
+            dist/${{ matrix.artifact }}.sha256
 
   github-release:
     needs: [verify-and-build-python, standalone]
@@ -79,7 +109,7 @@ jobs:
           path: release-assets
           merge-multiple: true
       - name: Generate SHA256 checksums
-        run: find release-assets -type f ! -name '*.sha256' -print0 | sort -z | xargs -0 sha256sum > release-assets/SHA256SUMS
+        run: find release-assets -type f ! -name '*.sha256' ! -name 'SHA256SUMS' -print0 | sort -z | xargs -0 sha256sum > release-assets/SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
