@@ -1,3 +1,5 @@
+import pytest
+
 from hf_download_live_monitor import controls as controls_module
 from hf_download_live_monitor.controls import DisplayState, KeyboardController
 from hf_download_live_monitor.layout import ViewMode
@@ -81,6 +83,53 @@ def test_windows_reader_uses_kbhit_before_getwch() -> None:
     assert read() == "q"
     close()
     assert calls == ["kbhit", "kbhit", "getwch"]
+
+
+@pytest.mark.parametrize(("prefix", "scan_code"), [("\x00", "?"), ("\xe0", "D")])
+def test_windows_extended_key_sequence_is_consumed_without_display_action(
+    prefix: str, scan_code: str
+) -> None:
+    keys = iter((prefix, scan_code))
+
+    class Msvcrt:
+        @staticmethod
+        def kbhit() -> bool:
+            return True
+
+        @staticmethod
+        def getwch() -> str:
+            return next(keys)
+
+    read, _ = controls_module._windows_reader(Msvcrt())
+    controller = KeyboardController(read_key=read)
+    state = DisplayState()
+    state = controller.poll(state)
+    state = controller.poll(state)
+    assert state == DisplayState()
+
+
+def test_incomplete_windows_extended_key_disables_controls_safely() -> None:
+    calls = 0
+
+    class Msvcrt:
+        @staticmethod
+        def kbhit() -> bool:
+            return True
+
+        @staticmethod
+        def getwch() -> str:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return "\xe0"
+            raise OSError("missing scan code")
+
+    read, _ = controls_module._windows_reader(Msvcrt())
+    controller = KeyboardController(read_key=read)
+    state = DisplayState()
+    assert controller.poll(state) == state
+    assert controller.poll(state) == state
+    assert calls == 2
 
 
 def test_posix_reader_sets_cbreak_and_restores_exact_settings_after_poll_error() -> None:

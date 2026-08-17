@@ -103,7 +103,16 @@ class _WindowsConsole(Protocol):
 def _windows_reader(
     console: _WindowsConsole,
 ) -> tuple[Callable[[], str | None], Callable[[], None]]:
-    return (lambda: console.getwch() if console.kbhit() else None), lambda: None
+    def read() -> str | None:
+        if not console.kbhit():
+            return None
+        key = console.getwch()
+        if key in ("\x00", "\xe0"):
+            console.getwch()
+            return None
+        return key
+
+    return read, lambda: None
 
 
 def _posix_reader(
