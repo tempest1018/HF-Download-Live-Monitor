@@ -132,6 +132,7 @@ def test_manual_exit_code_table_matches_runtime_mapping() -> None:
     manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
     rows = dict(re.findall(r"\| `([a-z]+)` \| (\d+) \|", manual))
     assert rows == {category.value: str(exit_code_for(category)) for category in ErrorCategory}
+    assert "| `downloader` | 6 | Official downloader launch or managed cleanup failure. |" in manual
 
 
 def test_schema_example_matches_representative_runtime_snapshot() -> None:

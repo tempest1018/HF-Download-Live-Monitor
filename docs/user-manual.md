@@ -496,7 +496,7 @@ Success is `0`. Errors use this stable mapping:
 | `access` | 3 | Authentication, gating, or authorization failure. |
 | `repository` | 4 | Repository, revision, selection, or metadata failure. |
 | `destination` | 5 | Unsafe, unwritable, or insufficient-capacity destination. |
-| `downloader` | 6 | Official downloader launch failure. |
+| `downloader` | 6 | Official downloader launch or managed cleanup failure. |
 | `monitor` | 7 | Monitor or process-discovery failure. |
 | `integrity` | 8 | Final reconciliation or integrity failure. |
 | `cancelled` | 9 | Cancellation without a higher-priority integrity failure. |
