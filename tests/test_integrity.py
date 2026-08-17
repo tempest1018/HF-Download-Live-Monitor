@@ -198,3 +198,70 @@ def test_verify_now_survives_reconciliation_after_request(
     finally:
         verifier.close()
     assert result.state is FileState.VERIFIED
+
+
+def test_completed_request_reconciles_without_exact_rerequest(tmp_path: Path) -> None:
+    path = tmp_path / "file.bin"
+    path.write_bytes(b"abc")
+    with IntegrityVerifier() as verifier:
+        verifier.request(path, SHA_ABC)
+        deadline = time.monotonic() + 2
+        while verifier._futures and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert verifier._futures == {}
+        assert len(verifier._cache) == 1
+
+
+def test_replacement_identities_leave_bounded_completed_state(tmp_path: Path) -> None:
+    path = tmp_path / "file.bin"
+    with IntegrityVerifier() as verifier:
+        for index in range(10):
+            path.write_bytes(f"value-{index}".encode())
+            verifier.verify_now(path, "0" * 64)
+        assert verifier._futures == {}
+        assert len(verifier._cache) == 1
+
+
+def test_queued_replacement_identities_are_bounded_without_cancelling_running_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "file.bin"
+    path.write_bytes(b"first")
+    import hf_download_live_monitor.integrity as integrity
+
+    started = threading.Event()
+    release = threading.Event()
+    real = integrity.sha256_file
+
+    def blocked(candidate: Path, chunk_size: int = 1024 * 1024) -> str:
+        started.set()
+        release.wait(2)
+        return real(candidate, chunk_size)
+
+    monkeypatch.setattr(integrity, "sha256_file", blocked)
+    with IntegrityVerifier(max_workers=1) as verifier:
+        verifier.request(path, "0" * 64)
+        assert started.wait(1)
+        for index in range(8):
+            path.write_bytes(f"replacement-{index}".encode())
+            verifier.request(path, "0" * 64)
+            assert len(verifier._futures) <= 2
+        assert sum(future.running() for future in verifier._futures.values()) == 1
+        release.set()
+
+
+@pytest.mark.parametrize("error", [OSError("token=hf_secret"), RuntimeError("symlink loop")])
+def test_resolve_error_returns_redacted_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    path = tmp_path / "token=hf_secret"
+
+    def broken_resolve(self: Path, strict: bool = False) -> Path:
+        raise error
+
+    monkeypatch.setattr(Path, "resolve", broken_resolve)
+    with IntegrityVerifier() as verifier:
+        result = verifier.verify_now(path, SHA_ABC)
+    assert result.state is FileState.FAILED
+    assert "hf_secret" not in str(result.path)
+    assert "hf_secret" not in (result.error or "")

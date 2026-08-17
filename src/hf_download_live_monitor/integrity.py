@@ -6,7 +6,7 @@ import hashlib
 import re
 import stat as stat_module
 import threading
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,9 +47,10 @@ class IntegrityVerifier:
         if max_workers <= 0:
             raise ValueError("max workers must be positive")
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="integrity")
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._futures: dict[_Key, Future[VerificationResult]] = {}
         self._cache: dict[_Key, VerificationResult] = {}
+        self._latest: dict[tuple[Path, str], _Key] = {}
         self._closed = False
 
     def request(self, path: Path, expected: str | None) -> VerificationResult:
@@ -61,11 +62,25 @@ class IntegrityVerifier:
     def _request(
         self, path: Path, expected: str | None
     ) -> tuple[VerificationResult, _Key | None, Future[VerificationResult] | None]:
-        resolved = path.resolve()
         digest = _validate_digest(expected)
         with self._lock:
             if self._closed:
                 raise RuntimeError("integrity verifier is closed")
+        try:
+            resolved = path.resolve()
+        except (OSError, RuntimeError) as exc:
+            return (
+                VerificationResult(
+                    Path("<unresolved>"),
+                    None,
+                    digest,
+                    None,
+                    FileState.FAILED,
+                    redact_text(str(exc)),
+                ),
+                None,
+                None,
+            )
         identity, failure = _identity_or_failure(resolved, digest)
         if failure is not None:
             return failure, None, None
@@ -77,6 +92,7 @@ class IntegrityVerifier:
                 None,
             )
         key = (resolved, identity, digest)
+        created = False
         with self._lock:
             if self._closed:
                 raise RuntimeError("integrity verifier is closed")
@@ -85,18 +101,17 @@ class IntegrityVerifier:
                 return cached, None, None
             future = self._futures.get(key)
             if future is None:
+                self._latest[(resolved, digest)] = key
+                self._evict_superseded_locked(key)
                 future = self._executor.submit(self._verify, resolved, identity, digest)
                 self._futures[key] = future
-                return (
-                    VerificationResult(resolved, identity, digest, None, FileState.SIZE_MATCHED),
-                    key,
-                    future,
-                )
-            return (
-                VerificationResult(resolved, identity, digest, None, FileState.VERIFYING),
-                key,
-                future,
-            )
+                created = True
+        if created:
+            future.add_done_callback(lambda completed: self._complete(key, completed))
+            state = FileState.SIZE_MATCHED
+        else:
+            state = FileState.VERIFYING
+        return VerificationResult(resolved, identity, digest, None, state), key, future
 
     def verify_now(self, path: Path, expected: str | None) -> VerificationResult:
         result, key, future = self._request(path, expected)
@@ -106,10 +121,44 @@ class IntegrityVerifier:
 
     def _reconcile(self, key: _Key, future: Future[VerificationResult]) -> VerificationResult:
         result = future.result()
-        with self._lock:
-            self._futures.pop(key, None)
-            self._cache[key] = result
+        self._record_completion(key, future, result)
         return result
+
+    def _complete(self, key: _Key, future: Future[VerificationResult]) -> None:
+        try:
+            result = future.result()
+        except CancelledError:
+            with self._lock:
+                if self._futures.get(key) is future:
+                    self._futures.pop(key, None)
+            return
+        except Exception as exc:
+            result = VerificationResult(
+                key[0], key[1], key[2], None, FileState.FAILED, redact_text(str(exc))
+            )
+        self._record_completion(key, future, result)
+
+    def _record_completion(
+        self, key: _Key, future: Future[VerificationResult], result: VerificationResult
+    ) -> None:
+        with self._lock:
+            if self._futures.get(key) is future:
+                self._futures.pop(key, None)
+            family = (key[0], key[2])
+            if self._latest.get(family) == key:
+                self._evict_cached_locked(key)
+                self._cache[key] = result
+
+    def _evict_superseded_locked(self, current: _Key) -> None:
+        self._evict_cached_locked(current)
+        for key, future in tuple(self._futures.items()):
+            if _same_family(key, current) and key != current and future.cancel():
+                self._futures.pop(key, None)
+
+    def _evict_cached_locked(self, current: _Key) -> None:
+        for key in tuple(self._cache):
+            if _same_family(key, current) and key != current:
+                self._cache.pop(key, None)
 
     @staticmethod
     def _verify(path: Path, before: FileIdentity, expected: str) -> VerificationResult:
@@ -152,6 +201,10 @@ def _validate_digest(expected: str | None) -> str | None:
     if re.fullmatch(r"[0-9a-fA-F]{64}", expected) is None:
         raise ValueError("expected digest must be exactly 64 hexadecimal characters")
     return expected.lower()
+
+
+def _same_family(left: _Key, right: _Key) -> bool:
+    return left[0] == right[0] and left[2] == right[2]
 
 
 def _identity(path: Path) -> FileIdentity:
