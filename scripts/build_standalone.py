@@ -48,14 +48,27 @@ def sha256_file(path: Path) -> str:
 def main() -> int:
     system = platform.system()
     labelled = Path("dist") / artifact_name(system, platform.machine())
+    pyinstaller_dist = Path("build") / "standalone-dist"
+    pyinstaller_work = Path("build") / "standalone-work"
     checksum = labelled.with_name(f"{labelled.name}.sha256")
     checksum_temp = checksum.with_name(f".{checksum.name}.tmp")
+    labelled.parent.mkdir(parents=True, exist_ok=True)
     for stale_path in (labelled, checksum, checksum_temp):
         stale_path.unlink(missing_ok=True)
 
-    run_pyinstaller(["--clean", "--noconfirm", "hf_download_live_monitor.spec"])
+    run_pyinstaller(
+        [
+            "--clean",
+            "--noconfirm",
+            "--distpath",
+            str(pyinstaller_dist),
+            "--workpath",
+            str(pyinstaller_work),
+            "hf_download_live_monitor.spec",
+        ]
+    )
     suffix = ".exe" if system == "Windows" else ""
-    executable = Path("dist") / f"hf-download-live-monitor{suffix}"
+    executable = pyinstaller_dist / f"hf-download-live-monitor{suffix}"
     if not executable.is_file():
         raise FileNotFoundError(executable)
 

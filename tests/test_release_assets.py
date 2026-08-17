@@ -98,10 +98,10 @@ def test_builder_relabels_default_output_and_streams_checksum(
     monkeypatch.setattr(build_standalone.platform, "machine", lambda: "aarch64")
     payload = b"standalone executable\n" * 100
 
-    def fake_build(_arguments: list[str]) -> None:
-        dist = tmp_path / "dist"
-        dist.mkdir()
-        (dist / "hf-download-live-monitor").write_bytes(payload)
+    def fake_build(arguments: list[str]) -> None:
+        output = Path(arguments[arguments.index("--distpath") + 1])
+        output.mkdir(parents=True)
+        (output / "hf-download-live-monitor").write_bytes(payload)
 
     monkeypatch.setattr(build_standalone, "run_pyinstaller", fake_build)
     monkeypatch.setattr(
@@ -117,6 +117,31 @@ def test_builder_relabels_default_output_and_streams_checksum(
     assert artifact.with_name(f"{artifact.name}.sha256").read_text(encoding="ascii") == (
         f"{hashlib.sha256(payload).hexdigest()}  {artifact.name}\n"
     )
+
+
+def test_builder_preserves_python_distributions_in_shared_dist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(build_standalone.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(build_standalone.platform, "machine", lambda: "x86_64")
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    wheel = dist / "hf_download_live_monitor-0.1.0-py3-none-any.whl"
+    wheel.write_bytes(b"wheel")
+
+    def fake_build(arguments: list[str]) -> None:
+        output = Path("dist")
+        if "--distpath" in arguments:
+            output = Path(arguments[arguments.index("--distpath") + 1])
+        shutil.rmtree(output, ignore_errors=True)
+        output.mkdir(parents=True)
+        (output / "hf-download-live-monitor").write_bytes(b"standalone")
+
+    monkeypatch.setattr(build_standalone, "run_pyinstaller", fake_build)
+
+    assert build_standalone.main() == 0
+    assert wheel.read_bytes() == b"wheel"
 
 
 def test_builder_removes_stale_labelled_outputs_when_build_output_is_missing(
