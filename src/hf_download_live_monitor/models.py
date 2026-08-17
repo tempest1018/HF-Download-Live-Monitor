@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -54,10 +55,26 @@ class DownloadSpec:
 class ManifestFile:
     filename: str
     expected_bytes: int
+    sha256: str | None = None
 
     def __post_init__(self) -> None:
         _validate_filename(self.filename)
         _validate_bytes(self.expected_bytes)
+        if self.sha256 is not None:
+            if re.fullmatch(r"[0-9a-fA-F]{64}", self.sha256) is None:
+                raise ValueError("SHA-256 digest must be exactly 64 hexadecimal characters")
+            object.__setattr__(self, "sha256", self.sha256.lower())
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadPlan:
+    spec: DownloadSpec
+    requested_revision: str
+    manifest: tuple[ManifestFile, ...]
+
+    def __post_init__(self) -> None:
+        if not self.requested_revision.strip():
+            raise ValueError("requested revision must not be empty")
 
 
 @dataclass(frozen=True, slots=True)

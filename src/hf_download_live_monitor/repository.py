@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import replace
 from typing import Any, Protocol, cast
 
 from huggingface_hub import HfApi
 from huggingface_hub.errors import GatedRepoError, HfHubHTTPError, RepositoryNotFoundError
 
-from hf_download_live_monitor.models import DownloadSpec, ManifestFile, MonitorError, RepoType
+from hf_download_live_monitor.errors import ErrorCategory
+from hf_download_live_monitor.models import (
+    DownloadPlan,
+    DownloadSpec,
+    ManifestFile,
+    MonitorError,
+    RepoType,
+)
 from hf_download_live_monitor.security import redact_text
 from hf_download_live_monitor.selection import select_manifest
 
@@ -25,34 +34,63 @@ class HubRepository:
         self._api: HubApi = cast(HubApi, api if api is not None else HfApi())
 
     def manifest(self, spec: DownloadSpec) -> tuple[ManifestFile, ...]:
+        return self.prepare(spec).manifest
+
+    def prepare(self, spec: DownloadSpec) -> DownloadPlan:
         try:
             info = self._repository_info(spec)
         except GatedRepoError as exc:
-            raise self._error("authentication_required", exc) from exc
+            raise self._error("gated_repository", exc, ErrorCategory.ACCESS) from exc
         except RepositoryNotFoundError as exc:
-            raise self._error("repository_not_found", exc) from exc
+            raise self._error("repository_not_found", exc, ErrorCategory.REPOSITORY) from exc
         except HfHubHTTPError as exc:
-            status = exc.response.status_code
+            status = exc.response.status_code if exc.response is not None else None
+            if status == 401:
+                raise self._error("authentication_required", exc, ErrorCategory.ACCESS) from exc
+            if status == 403:
+                raise self._error("access_denied", exc, ErrorCategory.ACCESS) from exc
             code = "rate_limited" if status == 429 else "hub_error"
-            raise self._error(code, exc, recoverable=status == 429 or (status or 0) >= 500) from exc
+            recoverable = status == 429 or (status is not None and status >= 500)
+            raise self._error(code, exc, ErrorCategory.REPOSITORY, recoverable) from exc
+
+        resolved_revision = getattr(info, "sha", None)
+        if (
+            not isinstance(resolved_revision, str)
+            or re.fullmatch(r"[0-9a-fA-F]{40}", resolved_revision) is None
+        ):
+            raise MonitorError(
+                "invalid_resolved_revision",
+                "the Hub returned no valid immutable repository revision",
+                category=ErrorCategory.REPOSITORY,
+            )
+        resolved_revision = resolved_revision.lower()
 
         files: list[ManifestFile] = []
         for sibling in getattr(info, "siblings", None) or ():
-            filename = getattr(sibling, "rfilename", None)
+            filename = _metadata_value(sibling, "rfilename")
             size = _sibling_size(sibling)
             if filename and size is not None:
-                files.append(ManifestFile(str(filename).replace("\\", "/"), size))
+                files.append(
+                    ManifestFile(
+                        str(filename).replace("\\", "/"),
+                        size,
+                        _sibling_sha256(sibling),
+                    )
+                )
         if not files:
             raise MonitorError(
                 "metadata_unavailable",
                 "the Hub returned no file-size metadata",
                 recoverable=True,
+                category=ErrorCategory.REPOSITORY,
             )
-        return select_manifest(
-            files,
-            filenames=spec.filenames,
-            includes=spec.includes,
-            excludes=spec.excludes,
+        manifest = select_manifest(
+            files, filenames=spec.filenames, includes=spec.includes, excludes=spec.excludes
+        )
+        return DownloadPlan(
+            spec=replace(spec, revision=resolved_revision),
+            requested_revision=spec.revision,
+            manifest=manifest,
         )
 
     def _repository_info(self, spec: DownloadSpec) -> Any:
@@ -64,18 +102,33 @@ class HubRepository:
         return self._api.model_info(spec.repo, **kwargs)
 
     @staticmethod
-    def _error(code: str, exc: Exception, recoverable: bool = False) -> MonitorError:
-        return MonitorError(code, redact_text(str(exc)), recoverable)
+    def _error(
+        code: str,
+        exc: Exception,
+        category: ErrorCategory,
+        recoverable: bool = False,
+    ) -> MonitorError:
+        return MonitorError(code, redact_text(str(exc)), recoverable, category)
 
 
 def _sibling_size(sibling: object) -> int | None:
-    direct = getattr(sibling, "size", None)
-    if direct is not None:
+    direct = _metadata_value(sibling, "size")
+    if isinstance(direct, (int, str)):
         return int(direct)
-    lfs = getattr(sibling, "lfs", None)
-    size: object | None = (
-        cast(dict[str, object], lfs).get("size")
-        if isinstance(lfs, dict)
-        else getattr(lfs, "size", None)
-    )
+    lfs = _metadata_value(sibling, "lfs")
+    size = _metadata_value(lfs, "size") if lfs is not None else None
     return int(size) if isinstance(size, (int, str)) else None
+
+
+def _sibling_sha256(sibling: object) -> str | None:
+    lfs = _metadata_value(sibling, "lfs")
+    digest = _metadata_value(lfs, "sha256") if lfs is not None else None
+    if isinstance(digest, str) and re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+        return digest.lower()
+    return None
+
+
+def _metadata_value(metadata: object, name: str) -> object | None:
+    if isinstance(metadata, dict):
+        return cast(dict[str, object], metadata).get(name)
+    return getattr(metadata, name, None)
