@@ -147,7 +147,7 @@ def _read_local_metadata(root: Path, filename: str) -> tuple[bool, str | None]:
             read_download_metadata,
         )
     except (AttributeError, ImportError):
-        return False, None
+        return True, None
 
     try:
         paths = get_local_download_paths(root, filename)

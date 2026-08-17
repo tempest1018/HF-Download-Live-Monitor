@@ -1,3 +1,4 @@
+import builtins
 import hashlib
 import math
 from pathlib import Path
@@ -149,6 +150,31 @@ def test_absent_metadata_allows_matching_digest_credit(
     )
 
     assert result.required_bytes == 0
+
+
+def test_unavailable_metadata_helper_blocks_matching_digest_credit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "out"
+    root.mkdir()
+    content = b"same"
+    (root / "model.bin").write_bytes(content)
+    real_import = builtins.__import__
+
+    def unavailable(name: str, *args: object, **kwargs: object):
+        if name == "huggingface_hub._local_folder":
+            raise ImportError("private helper unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", unavailable)
+
+    result = validate_destination(
+        _plan(root, ("model.bin", 4, hashlib.sha256(content).hexdigest())),
+        reserve_ratio=0,
+        disk_usage=_usage(4),
+    )
+
+    assert result.required_bytes == 4
 
 
 @pytest.mark.parametrize("actual", [999, 1001])
