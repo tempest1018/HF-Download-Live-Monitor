@@ -49,8 +49,18 @@ class ProgressEngine:
         self,
         spec: DownloadPlan,
         manifest: tuple[FileObservation, ...],
+        observations: float,
+        now: None = None,
+        final: bool = False,
+    ) -> ProgressSnapshot: ...
+
+    @overload
+    def update(
+        self,
+        spec: DownloadPlan,
+        manifest: tuple[FileObservation, ...],
         observations: None = None,
-        now: float = 0.0,
+        now: float = ...,
         final: bool = False,
     ) -> ProgressSnapshot: ...
 
@@ -58,16 +68,29 @@ class ProgressEngine:
         self,
         spec: DownloadSpec | DownloadPlan,
         manifest: tuple[ManifestFile, ...] | tuple[FileObservation, ...],
-        observations: tuple[FileObservation, ...] | None = None,
-        now: float = 0.0,
+        observations: tuple[FileObservation, ...] | float | None = None,
+        now: float | None = None,
         final: bool = False,
     ) -> ProgressSnapshot:
         if isinstance(spec, DownloadPlan):
             plan = spec
-            observations = cast(tuple[FileObservation, ...], manifest)
+            current_observations = cast(tuple[FileObservation, ...], manifest)
+            if isinstance(observations, (int, float)):
+                if now is not None:
+                    raise TypeError("plan update received time both positionally and by keyword")
+                now = float(observations)
+            elif observations is not None:
+                raise TypeError("plan update expects observations followed by an observation time")
         else:
-            assert observations is not None
+            if observations is None or isinstance(observations, (int, float)):
+                raise TypeError(
+                    "legacy update requires manifest, observations, and observation time"
+                )
             plan = DownloadPlan(spec, spec.revision, cast(tuple[ManifestFile, ...], manifest))
+            current_observations = observations
+
+        if now is None:
+            raise TypeError("update requires an observation time")
 
         spec = plan.spec
         manifest = plan.manifest
@@ -75,8 +98,7 @@ class ProgressEngine:
         for stale in self._histories.keys() - expected_names:
             del self._histories[stale]
 
-        assert observations is not None
-        observed = {item.filename: item for item in observations}
+        observed = {item.filename: item for item in current_observations}
         progress: list[FileProgress] = []
         errors: list[MonitorError] = []
         for item in manifest:

@@ -187,3 +187,19 @@ def test_engine_close_is_idempotent() -> None:
     engine = ProgressEngine()
     engine.close()
     engine.close()
+
+
+def test_plan_update_accepts_positional_observation_time() -> None:
+    snapshot = ProgressEngine().update(PLAN, observation(7.0, 1, partial=1), 7.0)
+
+    assert snapshot.observed_at == 7.0
+
+
+def test_plan_update_rejects_missing_or_duplicate_observation_time() -> None:
+    engine = ProgressEngine()
+    with pytest.raises(TypeError, match="requires an observation time"):
+        engine.update(PLAN, observation(7.0, 1, partial=1))  # type: ignore[call-overload]
+    with pytest.raises(TypeError, match="both positionally and by keyword"):
+        engine.update(  # type: ignore[call-overload]
+            PLAN, observation(7.0, 1, partial=1), 7.0, now=8.0
+        )
