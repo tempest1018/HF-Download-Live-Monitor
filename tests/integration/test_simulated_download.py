@@ -12,6 +12,53 @@ from hf_download_live_monitor.models import DownloadPlan, DownloadSpec, FileStat
 from scripts.run_container_simulation import run_simulation
 
 
+def test_dockerignore_covers_private_and_machine_local_state() -> None:
+    root = Path(__file__).parents[2]
+    patterns = {
+        line.strip()
+        for line in (root / ".dockerignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    required = {
+        ".cache/",
+        "**/.cache/",
+        ".huggingface/",
+        "**/.huggingface/",
+        "hf_home/",
+        "**/hf_home/",
+        "downloads/",
+        "**/downloads/",
+        "models/",
+        "**/models/",
+        "data/",
+        "**/data/",
+        ".env*",
+        "**/.env*",
+        "*.token",
+        "**/*.token",
+        "*.key",
+        "**/*.key",
+        "*.pem",
+        "**/*.pem",
+        "**/*auth*",
+        "**/*credential*",
+        "**/*secret*",
+    }
+
+    assert required <= patterns
+
+
+def test_dockerfile_caches_dependencies_before_copying_source() -> None:
+    dockerfile = (Path(__file__).parents[2] / "Dockerfile.test").read_text(encoding="utf-8")
+
+    dependency_install = dockerfile.index("# Dependency ranges mirror pyproject.toml")
+    source_copy = dockerfile.index("COPY src/ src/")
+    project_install = dockerfile.index("--no-deps -e .")
+
+    assert dependency_install < source_copy < project_install
+    assert "--no-build-isolation" not in dockerfile
+
+
 def _plan(destination: Path, content: bytes) -> DownloadPlan:
     spec = DownloadSpec("local/simulation", destination, filenames=("model.bin",))
     manifest = ManifestFile("model.bin", len(content), hashlib.sha256(content).hexdigest())
