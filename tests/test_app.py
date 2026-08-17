@@ -6,6 +6,7 @@ from hf_download_live_monitor.models import (
     DownloadPlan,
     DownloadSpec,
     FileObservation,
+    FileState,
     ManifestFile,
     MonitorError,
     ProgressSnapshot,
@@ -30,7 +31,7 @@ class FakeObserver:
         manifest: tuple[ManifestFile, ...],
         now: float,
     ) -> tuple[FileObservation, ...]:
-        return (FileObservation("model.bin", 10, 5, None, 5, now),)
+        return (FileObservation("model.bin", 10, 10, 10, None, now),)
 
 
 class RecordingRenderer:
@@ -187,6 +188,36 @@ def test_integrity_failure_returns_integrity_exit_code(tmp_path: Path) -> None:
 
     assert app.run(spec, plan=plan, once=True) == exit_code_for(ErrorCategory.INTEGRITY)
     assert renderer.snapshots[-1].failed_files == 1
+
+
+def test_once_renders_incomplete_final_snapshot_and_returns_integrity_exit() -> None:
+    from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
+
+    class PartialObserver:
+        def observe(
+            self,
+            spec: DownloadSpec,
+            manifest: tuple[ManifestFile, ...],
+            now: float,
+        ) -> tuple[FileObservation, ...]:
+            return (FileObservation("model.bin", 10, 5, None, 5, now),)
+
+    renderer = RecordingRenderer()
+    app = WatchApplication(
+        repository=FakeRepository(),
+        observer=PartialObserver(),
+        engine=ProgressEngine(),
+        renderer=renderer,
+        clock=lambda: 5.0,
+        sleeper=lambda _: None,
+    )
+
+    assert app.run(DownloadSpec("owner/repo", Path("out")), once=True) == exit_code_for(
+        ErrorCategory.INTEGRITY
+    )
+    assert len(renderer.snapshots) == 1
+    assert renderer.snapshots[-1].failed_files == 1
+    assert renderer.snapshots[-1].files[0].state is FileState.FAILED
 
 
 def test_resources_close_when_render_raises() -> None:

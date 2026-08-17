@@ -103,10 +103,13 @@ class ProgressEngine:
         errors: list[MonitorError] = []
         for item in manifest:
             current = observed.get(item.filename)
+            was_observed = current is not None
             if current is None:
                 current = FileObservation(item.filename, item.expected_bytes, 0, None, None, now)
             rate, elapsed = self._record(item.filename, now, current.visible_bytes)
-            state, error = self._state(plan, item, current, rate, elapsed, final)
+            state, error = self._state(
+                plan, item, current, rate, elapsed, final, was_observed=was_observed
+            )
             if error is not None:
                 errors.append(error)
             remaining = max(0, item.expected_bytes - current.visible_bytes)
@@ -173,13 +176,34 @@ class ProgressEngine:
         rate: float | None,
         elapsed: float,
         final: bool,
+        *,
+        was_observed: bool,
     ) -> tuple[FileState, MonitorError | None]:
-        if observation.visible_bytes > observation.expected_bytes:
+        expected = manifest_file.expected_bytes
+        if final and observation.expected_bytes != expected:
+            return FileState.FAILED, self._integrity_error(
+                "manifest_size_mismatch",
+                f"{manifest_file.filename} observation size metadata differs from the manifest",
+            )
+        if observation.visible_bytes > expected:
             return FileState.FAILED, self._integrity_error(
                 "oversized_file", f"{manifest_file.filename} exceeds its expected size"
             )
+        if final and not was_observed:
+            return FileState.FAILED, self._integrity_error(
+                "missing_file", f"{manifest_file.filename} is missing after download"
+            )
+        if final and observation.final_bytes is None:
+            return FileState.FAILED, self._integrity_error(
+                "incomplete_file", f"{manifest_file.filename} is incomplete after download"
+            )
         if observation.final_bytes is not None:
-            if observation.final_bytes != observation.expected_bytes:
+            if observation.final_bytes != expected:
+                if final:
+                    return FileState.FAILED, self._integrity_error(
+                        "incomplete_file",
+                        f"{manifest_file.filename} does not match its expected final size",
+                    )
                 return FileState.INCONSISTENT, None
             if manifest_file.sha256 is None:
                 return FileState.COMPLETE_UNVERIFIED, None
@@ -187,10 +211,15 @@ class ProgressEngine:
             if result.state is FileState.FAILED:
                 detail = result.error or "SHA-256 digest does not match repository metadata"
                 return FileState.FAILED, self._integrity_error("integrity_mismatch", detail)
+            if final and result.state is not FileState.VERIFIED:
+                return FileState.FAILED, self._integrity_error(
+                    "verification_incomplete",
+                    f"{manifest_file.filename} could not be verified after download",
+                )
             return result.state, None
         if observation.partial_bytes is None:
             return FileState.QUEUED, None
-        if observation.partial_bytes >= observation.expected_bytes:
+        if observation.partial_bytes >= expected:
             return FileState.FINALIZING, None
         if rate is None or elapsed < self._measuring_window:
             return FileState.MEASURING, None

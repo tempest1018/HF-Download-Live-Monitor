@@ -203,3 +203,31 @@ def test_plan_update_rejects_missing_or_duplicate_observation_time() -> None:
         engine.update(  # type: ignore[call-overload]
             PLAN, observation(7.0, 1, partial=1), 7.0, now=8.0
         )
+
+
+@pytest.mark.parametrize(
+    ("observations", "code"),
+    [
+        ((), "missing_file"),
+        (observation(1.0, 40, partial=40), "incomplete_file"),
+        (observation(1.0, 90, final=90), "incomplete_file"),
+        (observation(1.0, 100, expected=99, final=100), "manifest_size_mismatch"),
+    ],
+)
+def test_final_reconciliation_fails_every_incomplete_file(
+    observations: tuple[FileObservation, ...], code: str
+) -> None:
+    snapshot = ProgressEngine().update(PLAN, observations, 1.0, final=True)
+
+    assert snapshot.files[0].state is FileState.FAILED
+    assert snapshot.failed_files == 1
+    assert [error.code for error in snapshot.errors] == [code]
+    assert snapshot.errors[0].category.value == "integrity"
+
+
+def test_nonfinal_observation_size_metadata_cannot_override_manifest() -> None:
+    snapshot = ProgressEngine().update(PLAN, observation(1.0, 100, expected=99, partial=100), 1.0)
+
+    assert snapshot.files[0].expected_bytes == MANIFEST[0].expected_bytes
+    assert snapshot.downloaded_bytes == MANIFEST[0].expected_bytes
+    assert snapshot.files[0].state is FileState.FINALIZING
