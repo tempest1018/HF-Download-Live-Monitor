@@ -1,3 +1,4 @@
+import hashlib
 import math
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,11 +10,17 @@ from hf_download_live_monitor.models import DownloadPlan, DownloadSpec, Manifest
 from hf_download_live_monitor.preflight import PreflightResult, validate_destination
 
 
-def _plan(root: Path, *files: tuple[str, int]) -> DownloadPlan:
+def _plan(
+    root: Path, *files: tuple[str, int] | tuple[str, int, str]
+) -> DownloadPlan:
+    manifest = tuple(
+        ManifestFile(item[0], item[1], item[2] if len(item) == 3 else None)
+        for item in files
+    )
     return DownloadPlan(
         DownloadSpec("owner/repo", root, revision="a" * 40),
         "main",
-        tuple(ManifestFile(name, size) for name, size in files),
+        manifest,
     )
 
 
@@ -38,11 +45,42 @@ def test_requires_remaining_bytes_plus_rounded_up_reserve(tmp_path: Path) -> Non
 def test_exact_existing_file_gets_full_credit(tmp_path: Path) -> None:
     root = tmp_path / "out"
     root.mkdir()
-    (root / "done.bin").write_bytes(b"x" * 1000)
+    content = b"x" * 1000
+    (root / "done.bin").write_bytes(content)
     result = validate_destination(
-        _plan(root, ("done.bin", 1000), ("todo.bin", 2000)), disk_usage=_usage(2200)
+        _plan(
+            root,
+            ("done.bin", 1000, hashlib.sha256(content).hexdigest()),
+            ("todo.bin", 2000),
+        ),
+        disk_usage=_usage(2200),
     )
     assert result == PreflightResult(2200, 2200, 200)
+
+
+def test_equal_size_file_with_wrong_digest_gets_no_credit(tmp_path: Path) -> None:
+    root = tmp_path / "out"
+    root.mkdir()
+    (root / "model.bin").write_bytes(b"wrong")
+    expected_digest = hashlib.sha256(b"right").hexdigest()
+
+    result = validate_destination(
+        _plan(root, ("model.bin", 5, expected_digest)), disk_usage=_usage(6)
+    )
+
+    assert result == PreflightResult(6, 6, 1)
+
+
+def test_equal_size_file_without_digest_gets_no_credit(tmp_path: Path) -> None:
+    root = tmp_path / "out"
+    root.mkdir()
+    (root / "model.bin").write_bytes(b"same")
+
+    result = validate_destination(
+        _plan(root, ("model.bin", 4)), reserve_ratio=0, disk_usage=_usage(4)
+    )
+
+    assert result == PreflightResult(4, 4, 0)
 
 
 @pytest.mark.parametrize("actual", [999, 1001])
@@ -121,6 +159,48 @@ def test_probe_is_cleaned_up_when_probe_write_fails(
     assert caught.value.code == "destination_unwritable"
     assert "hf_secret" not in caught.value.message
     assert list(root.iterdir()) == []
+
+
+def test_probe_cleanup_failure_is_redacted_destination_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "out"
+
+    def fail_unlink(self: Path, *args: object, **kwargs: object) -> None:
+        raise OSError("token=hf_secret")
+
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+
+    with pytest.raises(MonitorError) as caught:
+        validate_destination(_plan(root, ("x", 1)), disk_usage=_usage(2))
+
+    assert caught.value.category is ErrorCategory.DESTINATION
+    assert caught.value.code == "destination_unwritable"
+    assert "hf_secret" not in caught.value.message
+    assert "probe cleanup" in caught.value.message
+
+
+def test_probe_cleanup_failure_does_not_mask_earlier_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "out"
+
+    def fail_unlink(self: Path, *args: object, **kwargs: object) -> None:
+        raise OSError("token=hf_cleanup_secret")
+
+    def fail_usage(_: Path):
+        raise OSError("token=hf_disk_secret")
+
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+
+    with pytest.raises(MonitorError) as caught:
+        validate_destination(_plan(root, ("x", 1)), disk_usage=fail_usage)
+
+    assert caught.value.code == "destination_unwritable"
+    assert "hf_disk_secret" not in caught.value.message
+    assert "<redacted>" in caught.value.message
+    assert isinstance(caught.value.__cause__, MonitorError)
+    assert "hf_cleanup_secret" not in str(caught.value.__cause__)
 
 
 def test_destination_resolution_failure_is_redacted_destination_error(

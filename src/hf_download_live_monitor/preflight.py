@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import shutil
+import sys
 import uuid
 from collections.abc import Callable
-from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -51,14 +52,9 @@ def validate_destination(
         remaining = 0
         for manifest_file in plan.manifest:
             final_path = resolve_repo_path(destination, manifest_file.filename)
-            try:
-                exact = (
-                    final_path.is_file()
-                    and final_path.stat().st_size == manifest_file.expected_bytes
-                )
-            except OSError:
-                exact = False
-            if not exact:
+            if not _matches_digest(
+                final_path, manifest_file.expected_bytes, manifest_file.sha256
+            ):
                 remaining += manifest_file.expected_bytes
 
         reserve = math.ceil(remaining * reserve_ratio)
@@ -80,8 +76,20 @@ def validate_destination(
         ) from exc
     finally:
         if probe is not None:
-            with suppress(OSError):
+            active_error = sys.exc_info()[1]
+            try:
                 probe.unlink(missing_ok=True)
+            except OSError as exc:
+                cleanup_error = MonitorError(
+                    "destination_unwritable",
+                    f"cannot safely use destination {redact_text(str(destination))}: "
+                    f"probe cleanup failed: {redact_text(str(exc))}",
+                    category=ErrorCategory.DESTINATION,
+                )
+                if active_error is None:
+                    raise cleanup_error from exc
+                object.__setattr__(active_error, "__cause__", cleanup_error)
+                object.__setattr__(active_error, "__suppress_context__", True)
 
     if available < required:
         safe_destination = redact_text(str(destination))
@@ -92,3 +100,18 @@ def validate_destination(
             category=ErrorCategory.DESTINATION,
         )
     return PreflightResult(required, available, reserve)
+
+
+def _matches_digest(path: Path, expected_bytes: int, expected_sha256: str | None) -> bool:
+    if expected_sha256 is None:
+        return False
+    try:
+        if not path.is_file() or path.stat().st_size != expected_bytes:
+            return False
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return False
+    return digest.hexdigest() == expected_sha256
