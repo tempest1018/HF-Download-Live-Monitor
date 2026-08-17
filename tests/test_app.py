@@ -225,6 +225,23 @@ def test_cleanup_note_base_exception_never_masks_primary_error() -> None:
     assert str(primary) == "primary"
 
 
+def test_cleanup_diagnostic_construction_never_masks_primary_error() -> None:
+    class HostileErrorMeta(type):
+        def __getattribute__(cls, name: str):
+            if name == "__name__":
+                raise KeyboardInterrupt
+            return super().__getattribute__(name)
+
+    class HostileCloseError(Exception, metaclass=HostileErrorMeta):
+        pass
+
+    primary = RuntimeError("primary")
+
+    WatchApplication._attach_close_note(primary, HostileCloseError("cleanup"))
+
+    assert str(primary) == "primary"
+
+
 def test_recoverable_metadata_failure_uses_bounded_exponential_retry() -> None:
     class FlakyRepository:
         attempts = 0
