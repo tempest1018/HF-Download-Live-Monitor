@@ -265,3 +265,20 @@ def test_resolve_error_returns_redacted_failure(
     assert result.state is FileState.FAILED
     assert "hf_secret" not in str(result.path)
     assert "hf_secret" not in (result.error or "")
+
+
+def test_verify_now_redacts_unexpected_worker_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "file.bin"
+    path.write_bytes(b"abc")
+    import hf_download_live_monitor.integrity as integrity
+
+    def broken_hash(candidate: Path, chunk_size: int = 1024 * 1024) -> str:
+        raise RuntimeError("worker failed with Bearer hf_secret")
+
+    monkeypatch.setattr(integrity, "sha256_file", broken_hash)
+    with IntegrityVerifier() as verifier:
+        result = verifier.verify_now(path, SHA_ABC)
+    assert result.state is FileState.FAILED
+    assert "hf_secret" not in (result.error or "")

@@ -120,22 +120,12 @@ class IntegrityVerifier:
         return self._reconcile(key, future)
 
     def _reconcile(self, key: _Key, future: Future[VerificationResult]) -> VerificationResult:
-        result = future.result()
+        result = _normalized_future_result(key, future)
         self._record_completion(key, future, result)
         return result
 
     def _complete(self, key: _Key, future: Future[VerificationResult]) -> None:
-        try:
-            result = future.result()
-        except CancelledError:
-            with self._lock:
-                if self._futures.get(key) is future:
-                    self._futures.pop(key, None)
-            return
-        except Exception as exc:
-            result = VerificationResult(
-                key[0], key[1], key[2], None, FileState.FAILED, redact_text(str(exc))
-            )
+        result = _normalized_future_result(key, future)
         self._record_completion(key, future, result)
 
     def _record_completion(
@@ -205,6 +195,16 @@ def _validate_digest(expected: str | None) -> str | None:
 
 def _same_family(left: _Key, right: _Key) -> bool:
     return left[0] == right[0] and left[2] == right[2]
+
+
+def _normalized_future_result(key: _Key, future: Future[VerificationResult]) -> VerificationResult:
+    try:
+        return future.result()
+    except CancelledError:
+        error = "verification cancelled"
+    except Exception as exc:
+        error = redact_text(str(exc))
+    return VerificationResult(key[0], key[1], key[2], None, FileState.FAILED, error)
 
 
 def _identity(path: Path) -> FileIdentity:
