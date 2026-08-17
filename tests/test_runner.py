@@ -1,4 +1,6 @@
 import subprocess
+import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +14,12 @@ from hf_download_live_monitor.models import (
     MonitorError,
     RepoType,
 )
-from hf_download_live_monitor.runner import ManagedDownload, _stop_and_reap, build_hf_command
+from hf_download_live_monitor.runner import (
+    ManagedDownload,
+    _start_process,
+    _stop_and_reap,
+    build_hf_command,
+)
 
 
 def test_build_hf_command_forwards_supported_options() -> None:
@@ -83,8 +90,10 @@ class FakeApplication:
         self.stop_seen = False
         self.plan: DownloadPlan | None = None
         self.cancellation_requested = cancellation_requested
+        self.interrupt_cleanup: Callable[[], object] | None = None
 
     def run(self, spec: DownloadSpec, **kwargs: Any) -> int:
+        self.interrupt_cleanup = kwargs.get("interrupt_cleanup")
         if self.error is not None:
             raise self.error
         self.stop_seen = kwargs["stop_when"]()
@@ -100,6 +109,50 @@ def test_managed_download_propagates_child_exit_and_stop_condition() -> None:
     assert result == 7
     assert application.stop_seen
     assert process.wait_timeouts == [None]
+
+
+def test_managed_download_supplies_child_cleanup_for_interrupt_reconciliation() -> None:
+    process = FakeProcess()
+    process.code = None  # type: ignore[assignment]
+    application = FakeApplication(code=exit_code_for(ErrorCategory.CANCELLED))
+    ManagedDownload(application, process_factory=lambda _: process).run(
+        DownloadSpec("owner/repo", Path("out"))
+    )
+    assert application.interrupt_cleanup is not None
+
+
+def test_managed_interrupt_cleanup_kills_and_reaps_before_final_observation() -> None:
+    events: list[str] = []
+
+    class Process(FakeProcess):
+        def terminate(self) -> None:
+            events.append("terminate")
+
+        def wait(self, timeout: float | None = None) -> int:
+            events.append("wait" if timeout is not None else "reap")
+            if timeout is not None:
+                raise subprocess.TimeoutExpired("hf", timeout)
+            self.code = 130
+            return self.code
+
+        def kill(self) -> None:
+            events.append("kill")
+
+    class InterruptingApplication:
+        cancellation_requested = False
+
+        def run(self, spec: DownloadSpec, **kwargs: Any) -> int:
+            kwargs["interrupt_cleanup"]()
+            events.append("final-observe")
+            return exit_code_for(ErrorCategory.CANCELLED)
+
+    process = Process()
+    process.code = None  # type: ignore[assignment]
+    assert ManagedDownload(InterruptingApplication(), process_factory=lambda _: process).run(
+        DownloadSpec("owner/repo", Path("out"))
+    ) == exit_code_for(ErrorCategory.CANCELLED)
+    assert events[:4] == ["terminate", "wait", "kill", "reap"]
+    assert events[4] == "final-observe"
 
 
 def test_managed_download_returns_child_failure_when_monitor_succeeds() -> None:
@@ -349,6 +402,33 @@ def test_managed_download_process_creation_failure_propagates() -> None:
         ManagedDownload(FakeApplication(), process_factory=fail).run(
             DownloadSpec("owner/repo", Path("out"))
         )
+
+
+def test_start_process_routes_child_output_to_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    def popen(command: tuple[str, ...], **kwargs: object) -> FakeProcess:
+        seen["command"] = command
+        seen.update(kwargs)
+        return FakeProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    _start_process(("hf", "download", "owner/repo"))
+    assert seen == {
+        "command": ("hf", "download", "owner/repo"),
+        "stdout": sys.stderr,
+        "stderr": None,
+    }
+
+
+def test_started_child_stdout_cannot_contaminate_monitor_stdout(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    process = _start_process((sys.executable, "-c", "print('child download output')"))
+    assert process.wait() == 0
+    captured = capfd.readouterr()
+    assert captured.out == ""
+    assert "child download output" in captured.err
 
 
 def test_managed_download_uses_resolved_plan_spec_for_child_command() -> None:

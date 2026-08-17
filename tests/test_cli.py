@@ -1,3 +1,6 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 import click
 import pytest
 from typer.testing import CliRunner
@@ -55,6 +58,26 @@ def test_watch_rejects_nonpositive_refresh() -> None:
         ["watch", "owner/repo", "--local-dir", "out", "--refresh", "0", "--once"],
     )
     assert result.exit_code != 0
+
+
+def test_watch_maps_handled_interrupt_cancellation_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        cli_module, "_watch_spec", lambda *args, **kwargs: exit_code_for(ErrorCategory.CANCELLED)
+    )
+    result = runner.invoke(cli, ["watch", "owner/repo", "--local-dir", "out"])
+    assert result.exit_code == exit_code_for(ErrorCategory.CANCELLED)
+
+
+def test_attach_maps_handled_interrupt_cancellation_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    candidate = SimpleNamespace(spec=DownloadSpec("owner/repo", Path("out")))
+    monkeypatch.setattr(cli_module, "system_process_provider", lambda: object())
+    monkeypatch.setattr(cli_module, "discover_downloads", lambda _: (candidate,))
+    monkeypatch.setattr(cli_module, "select_download", lambda *args, **kwargs: candidate)
+    monkeypatch.setattr(
+        cli_module, "_watch_spec", lambda *args, **kwargs: exit_code_for(ErrorCategory.CANCELLED)
+    )
+    result = runner.invoke(cli, ["attach"])
+    assert result.exit_code == exit_code_for(ErrorCategory.CANCELLED)
 
 
 def test_attach_help_exposes_pid_and_once() -> None:

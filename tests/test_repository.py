@@ -183,6 +183,18 @@ def _http_error(error_type: type[HfHubHTTPError], status: int) -> HfHubHTTPError
     [
         (_http_error(GatedRepoError, 403), ErrorCategory.ACCESS, "gated_repository", False),
         (
+            _http_error(RepositoryNotFoundError, 401),
+            ErrorCategory.ACCESS,
+            "authentication_required",
+            False,
+        ),
+        (
+            _http_error(RepositoryNotFoundError, 403),
+            ErrorCategory.ACCESS,
+            "access_denied",
+            False,
+        ),
+        (
             _http_error(RepositoryNotFoundError, 404),
             ErrorCategory.REPOSITORY,
             "repository_not_found",

@@ -42,6 +42,11 @@ class HubRepository:
         except GatedRepoError as exc:
             raise self._error("gated_repository", exc, ErrorCategory.ACCESS) from exc
         except RepositoryNotFoundError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status == 401:
+                raise self._error("authentication_required", exc, ErrorCategory.ACCESS) from exc
+            if status == 403:
+                raise self._error("access_denied", exc, ErrorCategory.ACCESS) from exc
             raise self._error("repository_not_found", exc, ErrorCategory.REPOSITORY) from exc
         except HfHubHTTPError as exc:
             status = exc.response.status_code if exc.response is not None else None

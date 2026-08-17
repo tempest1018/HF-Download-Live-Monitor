@@ -271,14 +271,15 @@ def test_release_workflow_has_exact_native_standalone_matrix_and_unique_assets()
     assert "pypa/gh-action-pypi-publish@release/v1" in rendered
 
 
-def test_release_validation_gates_both_publishers_and_builds_relative_checksums() -> None:
+def test_release_stages_draft_before_pypi_then_finalizes_public_release() -> None:
     jobs = _workflow("release")["jobs"]
     assert isinstance(jobs, dict)
     validation = jobs["validate-release-assets"]
     assert validation["needs"] == ["verify-and-build-python", "standalone"]
-    gate = ["verify-and-build-python", "standalone", "validate-release-assets"]
-    assert jobs["publish-pypi"]["needs"] == gate
-    assert jobs["github-release"]["needs"] == gate
+    assert jobs["stage-github-release"]["needs"] == ["validate-release-assets"]
+    assert jobs["publish-pypi"]["needs"] == ["stage-github-release"]
+    assert jobs["finalize-github-release"]["needs"] == ["publish-pypi"]
+    assert "github-release" not in jobs
     rendered = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     assert "cd release-assets" in rendered
     assert "find . -type f" in rendered
@@ -296,6 +297,13 @@ def test_release_validation_gates_both_publishers_and_builds_relative_checksums(
         assert name in rendered
     assert "dist/*.whl" in rendered
     assert "dist/*.tar.gz" in rendered
+    assert 'gh release create "$GITHUB_REF_NAME" --draft' in rendered
+    assert "--generate-notes" in rendered
+    assert "find release-assets -type f -print0" in rendered
+    assert "--json isDraft" in rendered
+    assert "--clobber" in rendered
+    assert "--draft=false" in rendered
+    assert "skip-existing: true" in rendered
 
 
 @pytest.mark.skipif(_BASH is None or _SHA256SUM is None, reason="bash or sha256sum is unavailable")

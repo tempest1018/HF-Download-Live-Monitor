@@ -68,7 +68,7 @@ def test_once_renders_one_snapshot_and_closes() -> None:
     assert renderer.closed
 
 
-def test_keyboard_interrupt_exits_cleanly_and_closes() -> None:
+def test_keyboard_interrupt_reconciles_final_snapshot_returns_cancelled_and_closes() -> None:
     renderer = RecordingRenderer()
 
     def interrupt(_: float) -> None:
@@ -83,8 +83,53 @@ def test_keyboard_interrupt_exits_cleanly_and_closes() -> None:
         sleeper=interrupt,
     )
 
-    assert app.run(DownloadSpec("owner/repo", Path("out")), once=False) == 0
+    assert app.run(DownloadSpec("owner/repo", Path("out")), once=False) == exit_code_for(
+        ErrorCategory.CANCELLED
+    )
+    assert len(renderer.snapshots) == 2
     assert renderer.closed
+
+
+def test_keyboard_interrupt_cleanup_runs_before_final_observation() -> None:
+    events: list[str] = []
+
+    class Observer(FakeObserver):
+        def observe(self, *args: object, **kwargs: object) -> tuple[FileObservation, ...]:
+            events.append("observe")
+            return super().observe(*args, **kwargs)  # type: ignore[arg-type]
+
+    app = WatchApplication(
+        repository=FakeRepository(),
+        observer=Observer(),
+        engine=ProgressEngine(),
+        renderer=RecordingRenderer(),
+        clock=lambda: 5.0,
+        sleeper=lambda _: (_ for _ in ()).throw(KeyboardInterrupt),
+    )
+
+    assert app.run(
+        DownloadSpec("owner/repo", Path("out")), interrupt_cleanup=lambda: events.append("cleanup")
+    ) == exit_code_for(ErrorCategory.CANCELLED)
+    assert events == ["observe", "cleanup", "observe"]
+
+
+def test_keyboard_interrupt_final_integrity_failure_takes_precedence() -> None:
+    class PartialObserver(FakeObserver):
+        def observe(self, *args: object, **kwargs: object) -> tuple[FileObservation, ...]:
+            return (FileObservation("model.bin", 10, 5, None, 5, 5.0),)
+
+    app = WatchApplication(
+        repository=FakeRepository(),
+        observer=PartialObserver(),
+        engine=ProgressEngine(),
+        renderer=RecordingRenderer(),
+        clock=lambda: 5.0,
+        sleeper=lambda _: (_ for _ in ()).throw(KeyboardInterrupt),
+    )
+
+    assert app.run(DownloadSpec("owner/repo", Path("out"))) == exit_code_for(
+        ErrorCategory.INTEGRITY
+    )
 
 
 def test_recoverable_metadata_failure_uses_bounded_exponential_retry() -> None:

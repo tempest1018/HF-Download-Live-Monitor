@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from collections.abc import Callable
 from typing import Protocol
 
@@ -30,6 +31,7 @@ class MonitorApplication(Protocol):
         once: bool = False,
         stop_when: Callable[[], bool] | None = None,
         handle_interrupt: bool = True,
+        interrupt_cleanup: Callable[[], object] | None = None,
     ) -> int: ...
 
 
@@ -78,7 +80,7 @@ class ManagedDownload:
                 manifest=manifest,
                 plan=plan,
                 stop_when=lambda: process.poll() is not None,
-                handle_interrupt=False,
+                interrupt_cleanup=lambda: _stop_and_reap(process),
             )
             cancellation_requested = monitor_code == exit_code_for(ErrorCategory.CANCELLED) or bool(
                 getattr(self._application, "cancellation_requested", False)
@@ -127,4 +129,4 @@ def _attach_cleanup_note(error: BaseException, cleanup_error: BaseException) -> 
 
 
 def _start_process(command: tuple[str, ...]) -> ChildProcess:
-    return subprocess.Popen(command)
+    return subprocess.Popen(command, stdout=sys.stderr, stderr=None)

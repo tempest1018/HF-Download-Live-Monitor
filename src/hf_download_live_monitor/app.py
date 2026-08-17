@@ -80,32 +80,51 @@ class WatchApplication:
         once: bool = False,
         stop_when: Callable[[], bool] | None = None,
         handle_interrupt: bool = True,
+        interrupt_cleanup: Callable[[], object] | None = None,
     ) -> int:
         error_in_flight = False
+        active_plan: DownloadPlan | None = None
         try:
-            plan = plan or self._prepare_plan(spec, manifest)
+            active_plan = plan or self._prepare_plan(spec, manifest)
             if once:
-                snapshot = self._observe_and_render(plan, final=True)
+                snapshot = self._observe_and_render(active_plan, final=True)
                 return self._exit_code(snapshot)
             while True:
-                self._observe_and_render(plan, final=False)
+                self._observe_and_render(active_plan, final=False)
                 if self._controls is not None:
                     self._display_state = self._controls.poll(self._display_state)
                     update = getattr(self._renderer, "update_display_state", None)
                     if callable(update):
                         update(self._display_state)
                     if self._display_state.cancel_requested:
-                        snapshot = self._observe_and_render(plan, final=True)
+                        snapshot = self._observe_and_render(active_plan, final=True)
                         if snapshot.failed_files:
                             return self._exit_code(snapshot)
                         return exit_code_for(ErrorCategory.CANCELLED)
                 if stop_when is not None and stop_when():
-                    snapshot = self._observe_and_render(plan, final=True)
+                    snapshot = self._observe_and_render(active_plan, final=True)
                     return self._exit_code(snapshot)
                 self._sleeper(self._refresh)
         except KeyboardInterrupt:
             if handle_interrupt:
-                return 0
+                if active_plan is None:
+                    return exit_code_for(ErrorCategory.CANCELLED)
+                cleanup_error: BaseException | None = None
+                if interrupt_cleanup is not None:
+                    try:
+                        interrupt_cleanup()
+                    except BaseException as exc:
+                        cleanup_error = exc
+                snapshot = self._observe_and_render(active_plan, final=True)
+                if cleanup_error is not None:
+                    raise MonitorError(
+                        "cleanup_failed",
+                        f"downloader cleanup failed ({type(cleanup_error).__name__})",
+                        category=ErrorCategory.DOWNLOADER,
+                    ) from cleanup_error
+                if snapshot.failed_files:
+                    return self._exit_code(snapshot)
+                return exit_code_for(ErrorCategory.CANCELLED)
             error_in_flight = True
             raise
         except BaseException:
