@@ -99,19 +99,19 @@ def test_json_schema_documents_version_two() -> None:
 def test_documented_cli_flags_exist_in_command_help() -> None:
     manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
     runner = CliRunner()
+    help_by_command = {
+        command: runner.invoke(cli, [command, "--help"]).stdout
+        for command in ("attach", "run", "watch")
+    }
     for command in ("attach", "run", "watch"):
-        help_text = runner.invoke(cli, [command, "--help"]).stdout
+        help_text = help_by_command[command]
         assert help_text
-        documented = set(
-            re.findall(r"`(--[a-z][a-z-]+)`", manual[manual.index(f"## {command.title()} mode") :])
-        )
+        section_start = manual.index(f"## {command.title()} mode")
+        section_end = manual.find("\n## ", section_start + 1)
+        section = manual[section_start : None if section_end == -1 else section_end]
+        documented = set(re.findall(r"(?<![a-z-])(--[a-z][a-z-]+)", section))
         for flag in documented:
-            if flag in {"--help"}:
-                continue
-            assert flag in help_text or any(
-                flag in runner.invoke(cli, [other, "--help"]).stdout
-                for other in ("attach", "run", "watch")
-            ), flag
+            assert flag in help_text, f"{command}: {flag}"
 
 
 def test_manual_names_every_supported_standalone_artifact() -> None:
@@ -134,29 +134,50 @@ def test_manual_exit_code_table_matches_runtime_mapping() -> None:
     assert rows == {category.value: str(exit_code_for(category)) for category in ErrorCategory}
 
 
-def test_schema_example_matches_runtime_snapshot_shape() -> None:
+def test_schema_example_matches_representative_runtime_snapshot() -> None:
     schema = Path("docs/json-schema.md").read_text(encoding="utf-8")
     example = json.loads(re.search(r"```json\n(.*?)\n```", schema, re.DOTALL).group(1))  # type: ignore[union-attr]
     fixture = snapshot_to_dict(
         ProgressSnapshot(
-            spec=DownloadSpec("owner/repository", Path("/downloads/repository"), revision="a" * 40),
+            spec=DownloadSpec(
+                "owner/repository",
+                Path("/downloads/repository"),
+                revision="0123456789abcdef0123456789abcdef01234567",
+            ),
             requested_revision="main",
-            files=(FileProgress("model.bin", 10, 10, FileState.VERIFIED, 0.0, 0.0),),
-            observed_at=1.0,
-            downloaded_bytes=10,
-            expected_bytes=10,
-            rate_bytes_per_second=0.0,
+            files=(FileProgress("model.bin", 1048576, 1048576, FileState.VERIFIED, 0.0, 0.0),),
+            observed_at=1786965600.5,
+            downloaded_bytes=1048576,
+            expected_bytes=1048576,
+            rate_bytes_per_second=343756.0,
             eta_seconds=0.0,
             verified_files=1,
-            errors=(MonitorError("example", "safe", True, ErrorCategory.MONITOR),),
+            errors=(
+                MonitorError(
+                    "temporary_observation_error",
+                    "a redacted, user-safe diagnostic",
+                    True,
+                    ErrorCategory.MONITOR,
+                ),
+            ),
         )
     )
-    assert example["schema_version"] == 2
-    assert example.keys() == fixture.keys()
-    assert example["repository"].keys() == fixture["repository"].keys()
-    assert example["integrity"].keys() == fixture["integrity"].keys()
-    assert example["files"][0].keys() == fixture["files"][0].keys()
-    assert example["errors"][0].keys() == fixture["errors"][0].keys()
+    example["repository"]["local_dir"] = fixture["repository"]["local_dir"]
+    assert example == fixture
+    assert isinstance(example["observed_at"], float)
+    assert isinstance(example["downloaded_bytes"], int)
+    assert example["files"][0]["state"] in {state.value for state in FileState}
+    assert example["integrity"] == {
+        "verified_files": 1,
+        "complete_unverified_files": 0,
+        "failed_files": 0,
+    }
+    assert example["errors"][0] == {
+        "category": "monitor",
+        "code": "temporary_observation_error",
+        "message": "a redacted, user-safe diagnostic",
+        "recoverable": True,
+    }
 
 
 def test_schema_documents_exact_runtime_state_vocabulary() -> None:

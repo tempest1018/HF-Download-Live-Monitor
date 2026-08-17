@@ -1,7 +1,8 @@
 # Structured output schema
 
-`--json` emits one final document and `--jsonl` emits one document per observation.
-Every document contains `"schema_version": 2`.
+`--json` emits one document for the first render. With `--once`, that render is a final
+one-shot observation. `--jsonl` emits one document per observation. Every document
+contains `"schema_version": 2`.
 
 ## Version 2 example
 
@@ -72,12 +73,17 @@ fields within version 2. Do not infer integrity from byte totals alone.
 
 ## Stream semantics and confidentiality
 
-`--json` emits exactly one snapshot: the first render, so pair it with `--once` for an
-explicit one-shot observation. `--jsonl` emits one complete schema-v2 JSON object per
-observation, including the forced final observation. Lines are independently parsable;
-their order is observation order.
+`--json` emits exactly one snapshot: the first render. With `--once`, that first render
+is also a final one-shot observation. `--jsonl` emits one complete schema-v2 JSON
+object per observation. It includes the forced final observation when the managed
+downloader stops or dashboard `q` requests cancellation. A handled Ctrl+C closes the
+display and resources but does not promise a final observation. Lines are independently
+parsable; their order is observation order.
 
 Repository tokens, authorization headers, and credentials are never schema fields.
-Messages are redacted before serialization. Within schema version 2, fields may be
-added compatibly; existing field meanings and types are stable. A breaking removal,
-rename, type change, or semantic change requires a new schema version.
+Error serialization redacts known token-assignment and bearer-authorization patterns
+without changing the internal error. Avoid putting secrets in arbitrary repository IDs,
+paths, or filenames because those user-supplied values are ordinary schema data. Within
+schema version 2, fields may be added compatibly; existing field meanings and types are
+stable. A breaking removal, rename, type change, or semantic change requires a new
+schema version.

@@ -7,11 +7,13 @@ from rich.columns import Columns
 from rich.console import Console
 
 from hf_download_live_monitor.controls import DisplayState
+from hf_download_live_monitor.errors import ErrorCategory
 from hf_download_live_monitor.layout import ViewMode, layout_policy
 from hf_download_live_monitor.models import (
     DownloadSpec,
     FileProgress,
     FileState,
+    MonitorError,
     ProgressSnapshot,
     RepoType,
 )
@@ -85,6 +87,25 @@ def test_json_lines_renderer_emits_one_object_per_render() -> None:
     renderer.render(sample())
     renderer.render(sample())
     assert len([json.loads(line) for line in stream.getvalue().splitlines()]) == 2
+
+
+def test_structured_renderers_redact_error_credentials_without_mutating_error() -> None:
+    error = MonitorError(
+        "unsafe_message",
+        "token=hf_secret Authorization: Bearer hf_authorization_secret",
+        category=ErrorCategory.MONITOR,
+    )
+    snapshot = replace(sample(), errors=(error,))
+
+    stream = io.StringIO()
+    JsonRenderer(stream).render(snapshot)
+    encoded = stream.getvalue()
+    data = json.loads(encoded)
+
+    assert "hf_secret" not in encoded
+    assert "hf_authorization_secret" not in encoded
+    assert "<redacted>" in data["errors"][0]["message"]
+    assert "hf_secret" in error.message
 
 
 def test_rich_renderer_can_render_without_terminal() -> None:

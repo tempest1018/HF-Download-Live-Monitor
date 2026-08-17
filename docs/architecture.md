@@ -17,11 +17,13 @@ Lines. Pure layout policy selects narrow, normal, or wide composition.
 
 ## Lifecycle and fallbacks
 
-`WatchApplication` prepares a plan, observes and renders repeatedly, polls optional
-controls, performs a forced final observe/verify/render pass on stop or cancellation,
-then closes renderer, engine, and controls. Controls mutate only `DisplayState`.
-Terminal setup or key-reading failures disable interaction without changing monitoring
-correctness; plain and structured renderers do not initialize controls.
+`WatchApplication` prepares a plan, observes and renders repeatedly, and polls optional
+controls. It performs a forced final observe/verify/render pass when the managed
+downloader stop condition fires or dashboard `q` requests cancellation. A handled
+KeyboardInterrupt closes the renderer, engine, and controls but does not promise a
+final observation. Controls mutate only `DisplayState`. Terminal setup or key-reading
+failures disable interaction without changing monitoring correctness; plain and
+structured renderers do not initialize controls.
 
 `processes.py` emits normalized process records from POSIX `/proc` or Windows CIM plus
 `psutil` working-directory resolution. `hf_command.py` accepts documented download

@@ -19,6 +19,7 @@ from rich.text import Text
 from hf_download_live_monitor.controls import DisplayState
 from hf_download_live_monitor.layout import LayoutPolicy, ViewMode, layout_policy
 from hf_download_live_monitor.models import FileProgress, FileState, ProgressSnapshot
+from hf_download_live_monitor.security import redact_text
 
 
 class Renderer(Protocol):
@@ -57,7 +58,9 @@ def snapshot_to_dict(snapshot: ProgressSnapshot) -> dict[str, Any]:
             "failed_files": snapshot.failed_files,
         },
         "files": [{**asdict(item), "state": item.state.value} for item in snapshot.files],
-        "errors": [error.to_dict() for error in snapshot.errors],
+        "errors": [
+            {**error.to_dict(), "message": redact_text(error.message)} for error in snapshot.errors
+        ],
     }
 
 

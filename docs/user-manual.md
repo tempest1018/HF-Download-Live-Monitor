@@ -306,7 +306,8 @@ Press Ctrl+C to stop monitoring. In `watch` mode this stops only the monitor, no
 
 ## Attach mode
 
-`attach` discovers supported `hf download` processes that include `--local-dir`.
+`attach` discovers supported `hf download` processes that include the official
+downloader's local-directory option.
 
 ```console
 hf-download-live-monitor attach
@@ -333,7 +334,9 @@ Attachment support:
 - macOS: automatic attachment is not supported because `/proc` is unavailable; use `watch` or `run`.
 - Restricted containers or accounts may not permit inspection of other processes; use `watch` or `run`.
 
-Relative `--local-dir` values are resolved against the downloader process's working directory. Token options are discarded by the parser and are not retained in the normalized download specification.
+Relative local-directory values from the discovered downloader are resolved against
+that process's working directory. Token options are discarded by the parser and are
+not retained in the normalized download specification.
 
 ## Run mode
 
@@ -437,7 +440,8 @@ Plain text contains no cursor-control sequences and is selected automatically wh
 hf-download-live-monitor watch owner/repository --local-dir ./download --json --once > status.json
 ```
 
-`--json` writes one JSON document per render. It is best paired with `--once`.
+`--json` writes one document for its first render. With `--once`, that first render is
+a final one-shot observation.
 
 ### JSON Lines
 
@@ -445,7 +449,11 @@ hf-download-live-monitor watch owner/repository --local-dir ./download --json --
 hf-download-live-monitor watch owner/repository --local-dir ./download --jsonl > progress.jsonl
 ```
 
-`--jsonl` writes one independent JSON object per line and is suitable for streaming automation. The current structured schema version is `2`; see [Structured output schema](json-schema.md).
+`--jsonl` writes one independent JSON object per observation and is suitable for
+streaming automation. It includes a forced final observation when the managed
+downloader stops or dashboard `q` requests cancellation. A handled Ctrl+C closes the
+display and resources but does not promise a final observation. The current structured
+schema version is `2`; see [Structured output schema](json-schema.md).
 
 The managed downloader started by `run` inherits the terminal's standard streams. Depending on the installed Hugging Face CLI version, its own messages can appear alongside monitor output. For a guaranteed monitor-only JSON file, start the download separately and use `watch --json --once`, `watch --jsonl`, or an attached process whose output remains in its original terminal.
 
@@ -513,7 +521,8 @@ snapshots using schema version 2. It separates requested and resolved
 revisions and distinguishes verified, `complete_unverified`, and failed counts. See
 `docs/json-schema.md` for the exact contract and version 1 migration table.
 
-- `0` means the monitor completed normally, produced a requested one-time observation, or was stopped cleanly in `watch` or `attach` mode.
+- `0` means the monitor completed normally, produced a requested one-time observation,
+  or handled Ctrl+C in `watch` or `attach` mode.
 - Stable classified failures use the category table above; CLI parser usage errors also use `2`.
 - `run` propagates the official downloader's nonzero exit status after monitoring it.
 - Operating-system launch failures and forced termination can produce platform-specific nonzero values.
