@@ -78,9 +78,12 @@ is also a final one-shot observation. `--jsonl` emits one complete schema-v2 JSO
 object per observation. It includes the forced final observation for the managed
 downloader stop condition, dashboard `q`, and handled Ctrl+C. Managed Ctrl+C stops and
 reaps the child before that final reconciliation; `watch` and `attach` have no managed
-child but still emit their final observation. Cancellation returns exit code `9` unless
-a final integrity failure takes precedence with exit code `8`. Lines are independently
-parsable, and their order is observation order.
+child but still emit their final observation. When managed cleanup succeeds,
+cancellation returns exit code `9` unless a final integrity failure takes precedence
+with exit code `8`. Cleanup failure, including a second interrupt during cleanup, is
+retained while final reconciliation and serialization still run; cleanup failure takes
+precedence over snapshot integrity and maps to downloader exit code `6`. Lines are
+independently parsable, and their order is observation order.
 
 Repository tokens, authorization headers, and credentials are never schema fields.
 Error serialization redacts known token-assignment and bearer-authorization patterns

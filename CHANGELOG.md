@@ -28,7 +28,8 @@ All notable changes follow Keep a Changelog and semantic versioning.
   is cancelled.
 - Force final filesystem observation and verification after downloader exit.
 - Reconcile and render a final observation on Ctrl+C after managed child cleanup,
-  preserving integrity failure precedence over cancellation.
+  preserving integrity failure precedence over cancellation when cleanup succeeds and
+  downloader cleanup-failure precedence when it does not.
 - Bound background integrity work and invalidate cached hashes when file identity
   changes.
 

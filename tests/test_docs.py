@@ -209,7 +209,10 @@ def test_interrupt_reconciliation_contract_is_documented_without_old_claims() ->
         "final integrity failure",
         "exit code `9`",
         "exit code `8`",
+        "exit code `6`",
         "stopped and reaped",
+        "cleanup failure takes precedence",
+        "second interrupt",
     ):
         assert required in combined
     assert (

@@ -369,8 +369,10 @@ hf-download-live-monitor run owner/repository --local-dir ./download --hf-execut
 On Ctrl+C, HF Download Live Monitor asks the child downloader to terminate and waits
 up to five seconds. If shutdown times out or cleanup is interrupted again, it kills the
 child. After the child is stopped and reaped, the monitor performs its forced final
-observation, verification, and render. Cancellation returns exit code `9` unless a
-final integrity failure takes precedence with exit code `8`.
+observation, verification, and render. When cleanup succeeds, cancellation returns exit
+code `9` unless a final integrity failure takes precedence with exit code `8`. If
+cleanup fails, including a second interrupt during cleanup, final reconciliation still
+runs; the cleanup failure takes precedence and returns downloader exit code `6`.
 
 ## Repository types and file selection
 
@@ -461,9 +463,11 @@ hf-download-live-monitor watch owner/repository --local-dir ./download --jsonl >
 `--jsonl` writes one independent JSON object per observation and is suitable for
 streaming automation. It includes the forced final observation for downloader stop,
 dashboard `q`, and handled Ctrl+C paths. With managed Ctrl+C, the child is stopped and
-reaped before final reconciliation. In `watch` and `attach`, there is no managed child,
-but Ctrl+C still forces the final observation. The current structured schema version
-is `2`; see [Structured output schema](json-schema.md).
+reaped before final reconciliation. A cleanup failure or second interrupt is retained
+while that final JSONL observation is produced, then takes precedence as downloader
+exit code `6`. In `watch` and `attach`, there is no managed child or child-cleanup
+failure path, but Ctrl+C still forces the final observation. The current structured
+schema version is `2`; see [Structured output schema](json-schema.md).
 
 The managed downloader started by `run` inherits the terminal's standard streams. Depending on the installed Hugging Face CLI version, its own messages can appear alongside monitor output. For a guaranteed monitor-only JSON file, start the download separately and use `watch --json --once`, `watch --jsonl`, or an attached process whose output remains in its original terminal.
 
@@ -532,8 +536,12 @@ revisions and distinguishes verified, `complete_unverified`, and failed counts. 
 `docs/json-schema.md` for the exact contract and version 1 migration table.
 
 - `0` means the monitor completed normally or produced a requested one-time observation.
-- Ctrl+C and dashboard `q` cancellation return `9` after final reconciliation unless
-  a final integrity failure returns `8` instead.
+- With successful managed cleanup, Ctrl+C returns `9` after final reconciliation unless
+  a final integrity failure returns `8` instead. Managed cleanup failure takes
+  precedence over both and returns downloader code `6`; `watch` and `attach` have no
+  managed child cleanup.
+- Dashboard `q` requests cancellation through the controls path and final reconciliation
+  before managed runner cleanup.
 - Stable classified failures use the category table above; CLI parser usage errors also use `2`.
 - `run` propagates the official downloader's nonzero exit status after monitoring it.
 - Operating-system launch failures and forced termination can produce platform-specific nonzero values.

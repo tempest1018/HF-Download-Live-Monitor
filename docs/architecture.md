@@ -24,8 +24,12 @@ handles KeyboardInterrupt. Managed Ctrl+C first invokes runner cleanup so the ch
 stopped and reaped before final reconciliation; `watch` and `attach` have no managed
 child but perform the same final pass. Dashboard `q` performs its final pass before the
 managed runner receives the cancellation result and cleans up the child. A final
-integrity failure returns exit code `8` instead of cancellation exit code `9`.
-Renderer, engine, and controls are then closed.
+integrity failure returns exit code `8` instead of cancellation exit code `9` when
+managed cleanup succeeds. If cleanup fails, including on a second interrupt during
+cleanup, the application retains that error, still performs final reconciliation, then
+raises a downloader-category error: cleanup failure takes precedence over snapshot
+integrity and maps to exit code `6`. The no-child `watch` and `attach` paths have no
+such cleanup-error precedence. Renderer, engine, and controls are then closed.
 Controls mutate only `DisplayState`. Terminal setup or key-reading failures disable
 interaction without changing monitoring correctness; plain and structured renderers
 do not initialize controls.
