@@ -28,7 +28,15 @@ def test_watch_help_exposes_repository_and_output_options() -> None:
     result = runner.invoke(cli, ["watch", "--help"])
 
     assert result.exit_code == 0
-    for option in ("--local-dir", "--repo-type", "--revision", "--include", "--json"):
+    for option in (
+        "--local-dir",
+        "--repo-type",
+        "--revision",
+        "--include",
+        "--json",
+        "--view",
+        "--reduced-motion",
+    ):
         assert option in _plain(result.stdout)
 
 
@@ -54,12 +62,21 @@ def test_attach_help_exposes_pid_and_once() -> None:
     assert result.exit_code == 0
     assert "--pid" in _plain(result.stdout)
     assert "--once" in _plain(result.stdout)
+    assert "--view" in _plain(result.stdout)
 
 
 def test_run_help_exposes_download_options() -> None:
     result = runner.invoke(cli, ["run", "--help"])
     assert result.exit_code == 0
-    for option in ("--local-dir", "--repo-type", "--revision", "--include", "--exclude"):
+    for option in (
+        "--local-dir",
+        "--repo-type",
+        "--revision",
+        "--include",
+        "--exclude",
+        "--view",
+        "--reduced-motion",
+    ):
         assert option in _plain(result.stdout)
 
 

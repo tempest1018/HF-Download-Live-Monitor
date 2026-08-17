@@ -1,7 +1,10 @@
 from pathlib import Path
 
 from hf_download_live_monitor.app import WatchApplication
+from hf_download_live_monitor.controls import DisplayState
 from hf_download_live_monitor.engine import ProgressEngine
+from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
+from hf_download_live_monitor.layout import ViewMode
 from hf_download_live_monitor.models import (
     DownloadPlan,
     DownloadSpec,
@@ -44,6 +47,9 @@ class RecordingRenderer:
 
     def close(self) -> None:
         self.closed = True
+
+    def update_display_state(self, state: DisplayState) -> None:
+        self.state = state
 
 
 def test_once_renders_one_snapshot_and_closes() -> None:
@@ -249,3 +255,80 @@ def test_resources_close_when_render_raises() -> None:
         app.run(DownloadSpec("owner/repo", Path("out")), once=True)
     assert renderer.closed
     assert engine.closed
+
+
+def test_q_reconciles_final_snapshot_then_returns_cancelled_and_closes_controls() -> None:
+    class Controls:
+        closed = False
+
+        def poll(self, state: DisplayState) -> DisplayState:
+            return state.apply_key("q")
+
+        def close(self) -> None:
+            self.closed = True
+
+    renderer = RecordingRenderer()
+    controls = Controls()
+    app = WatchApplication(
+        repository=FakeRepository(),
+        observer=FakeObserver(),
+        engine=ProgressEngine(),
+        renderer=renderer,
+        controls=controls,
+        clock=lambda: 5.0,
+        sleeper=lambda _: None,
+    )
+    assert app.run(DownloadSpec("owner/repo", Path("out"))) == exit_code_for(
+        ErrorCategory.CANCELLED
+    )
+    assert len(renderer.snapshots) == 2
+    assert controls.closed
+
+
+def test_q_integrity_failure_takes_precedence_over_cancelled(tmp_path: Path) -> None:
+    class Controls:
+        def poll(self, state: DisplayState) -> DisplayState:
+            return state.apply_key("q")
+
+        def close(self) -> None:
+            pass
+
+    content = b"wrong"
+    (tmp_path / "model.bin").write_bytes(content)
+    spec = DownloadSpec("owner/repo", tmp_path)
+    plan = DownloadPlan(spec, "main", (ManifestFile("model.bin", len(content), "0" * 64),))
+    app = WatchApplication(
+        repository=FakeRepository(),
+        observer=FakeObserver(),
+        engine=ProgressEngine(),
+        renderer=RecordingRenderer(),
+        controls=Controls(),
+        clock=lambda: 5.0,
+        sleeper=lambda _: None,
+    )
+    assert app.run(spec, plan=plan) == exit_code_for(ErrorCategory.INTEGRITY)
+
+
+def test_controls_begin_from_requested_view_mode() -> None:
+    seen: list[DisplayState] = []
+
+    class Controls:
+        def poll(self, state: DisplayState) -> DisplayState:
+            seen.append(state)
+            return state.apply_key("q")
+
+        def close(self) -> None:
+            pass
+
+    app = WatchApplication(
+        repository=FakeRepository(),
+        observer=FakeObserver(),
+        engine=ProgressEngine(),
+        renderer=RecordingRenderer(),
+        controls=Controls(),
+        display_state=DisplayState(view_mode=ViewMode.DETAILED),
+        clock=lambda: 5.0,
+        sleeper=lambda _: None,
+    )
+    app.run(DownloadSpec("owner/repo", Path("out")))
+    assert seen[0].view_mode is ViewMode.DETAILED

@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable
 from typing import Protocol
 
+from hf_download_live_monitor.controls import DisplayState
 from hf_download_live_monitor.engine import ProgressEngine
 from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
 from hf_download_live_monitor.models import (
@@ -34,6 +35,12 @@ class Observer(Protocol):
     ) -> tuple[FileObservation, ...]: ...
 
 
+class Controls(Protocol):
+    def poll(self, state: DisplayState) -> DisplayState: ...
+
+    def close(self) -> None: ...
+
+
 class WatchApplication:
     def __init__(
         self,
@@ -45,6 +52,8 @@ class WatchApplication:
         refresh: float = 0.25,
         clock: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], None] = time.sleep,
+        controls: Controls | None = None,
+        display_state: DisplayState | None = None,
     ) -> None:
         if refresh <= 0:
             raise ValueError("refresh interval must be positive")
@@ -55,6 +64,8 @@ class WatchApplication:
         self._refresh = refresh
         self._clock = clock
         self._sleeper = sleeper
+        self._controls = controls
+        self._display_state = display_state or DisplayState()
 
     def run(
         self,
@@ -74,6 +85,16 @@ class WatchApplication:
                 return self._exit_code(snapshot)
             while True:
                 self._observe_and_render(plan, final=False)
+                if self._controls is not None:
+                    self._display_state = self._controls.poll(self._display_state)
+                    update = getattr(self._renderer, "update_display_state", None)
+                    if callable(update):
+                        update(self._display_state)
+                    if self._display_state.cancel_requested:
+                        snapshot = self._observe_and_render(plan, final=True)
+                        if snapshot.failed_files:
+                            return self._exit_code(snapshot)
+                        return exit_code_for(ErrorCategory.CANCELLED)
                 if stop_when is not None and stop_when():
                     snapshot = self._observe_and_render(plan, final=True)
                     return self._exit_code(snapshot)
@@ -97,6 +118,12 @@ class WatchApplication:
             except BaseException as exc:
                 if close_error is None:
                     close_error = exc
+            if self._controls is not None:
+                try:
+                    self._controls.close()
+                except BaseException as exc:
+                    if close_error is None:
+                        close_error = exc
             if close_error is not None and not error_in_flight:
                 raise close_error
 
