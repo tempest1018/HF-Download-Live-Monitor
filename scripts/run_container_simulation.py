@@ -23,6 +23,7 @@ from hf_download_live_monitor.integrity import IntegrityVerifier  # noqa: E402
 from hf_download_live_monitor.models import (  # noqa: E402
     DownloadPlan,
     DownloadSpec,
+    FileObservation,
     FileState,
     ManifestFile,
     ProgressSnapshot,
@@ -35,6 +36,7 @@ class SimulationResult:
     exit_code: int
     snapshots: tuple[ProgressSnapshot, ...]
     child_reaped: bool
+    handshake_acknowledged: bool
 
 
 class _PreparedRepository:
@@ -62,6 +64,28 @@ class _Collector:
         pass
 
 
+class _HandshakeObserver:
+    def __init__(self, ready_marker: Path, continue_marker: Path) -> None:
+        self._observer = FileSystemObserver()
+        self._ready_marker = ready_marker
+        self._continue_marker = continue_marker
+        self.acknowledged = False
+
+    def observe(
+        self,
+        spec: DownloadSpec,
+        manifest: tuple[ManifestFile, ...],
+        now: float,
+    ) -> tuple[FileObservation, ...]:
+        observations = self._observer.observe(spec, manifest, now)
+        if self._ready_marker.is_file() and any(
+            0 < item.visible_bytes < item.expected_bytes for item in observations
+        ):
+            self.acknowledged = True
+            self._continue_marker.touch()
+        return observations
+
+
 def run_simulation(
     plan: DownloadPlan,
     *,
@@ -74,6 +98,8 @@ def run_simulation(
     source = plan.spec.local_dir / ".simulation-source"
     plan.spec.local_dir.mkdir(parents=True, exist_ok=True)
     source.write_bytes(content)
+    ready_marker = plan.spec.local_dir / ".simulation-ready"
+    continue_marker = plan.spec.local_dir / ".simulation-continue"
     fixture = CHECKOUT_ROOT / "tests" / "fixtures" / "incremental_downloader.py"
     process: subprocess.Popen[bytes] | None = None
 
@@ -89,6 +115,10 @@ def run_simulation(
             str(chunk_size),
             "--delay",
             str(delay),
+            "--ready-marker",
+            str(ready_marker),
+            "--continue-marker",
+            str(continue_marker),
         ]
         if corrupt:
             command.append("--corrupt")
@@ -96,22 +126,33 @@ def run_simulation(
         return process
 
     collector = _Collector(fail_render=fail_render)
+    observer = _HandshakeObserver(ready_marker, continue_marker)
     application = WatchApplication(
         repository=_PreparedRepository(plan),
-        observer=FileSystemObserver(),
+        observer=observer,
         engine=ProgressEngine(verifier=IntegrityVerifier()),
         renderer=collector,
         refresh=0.001,
     )
     try:
-        exit_code = ManagedDownload(application, process_factory=start).run(plan.spec, plan=plan)
-    except BaseException as exc:
-        if process is not None:
-            exc.__dict__["simulation_process"] = process
-        raise
+        try:
+            exit_code = ManagedDownload(application, process_factory=start).run(
+                plan.spec, plan=plan
+            )
+        except BaseException as exc:
+            if process is not None:
+                exc.__dict__["simulation_process"] = process
+            raise
+    finally:
+        continue_marker.touch()
     if process is None:
         raise RuntimeError("simulation child was not started")
-    return SimulationResult(exit_code, tuple(collector.snapshots), process.poll() is not None)
+    return SimulationResult(
+        exit_code,
+        tuple(collector.snapshots),
+        process.poll() is not None,
+        observer.acknowledged,
+    )
 
 
 def _content(run: int, size: int = 64 * 1024) -> bytes:
@@ -137,7 +178,7 @@ def main() -> int:
                 (ManifestFile("model.bin", len(content), hashlib.sha256(content).hexdigest()),),
             )
             result = run_simulation(plan, content=content)
-            intermediate = any(
+            intermediate = result.handshake_acknowledged and any(
                 0 < snapshot.downloaded_bytes < len(content) for snapshot in result.snapshots
             )
             final_state = result.snapshots[-1].files[0].state

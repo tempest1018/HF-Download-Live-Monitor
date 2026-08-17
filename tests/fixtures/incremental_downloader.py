@@ -33,6 +33,9 @@ def download(
     chunk_size: int,
     delay: float,
     corrupt: bool,
+    ready_marker: Path,
+    continue_marker: Path,
+    handshake_timeout: float,
 ) -> None:
     content = source.read_bytes()
     if corrupt and content:
@@ -46,6 +49,13 @@ def download(
             stream.write(content[offset : offset + chunk_size])
             stream.flush()
             os.fsync(stream.fileno())
+            if offset == 0:
+                ready_marker.touch()
+                deadline = time.monotonic() + handshake_timeout
+                while not continue_marker.is_file():
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("monitor did not acknowledge partial download")
+                    time.sleep(0.005)
             time.sleep(delay)
     os.replace(partial, final)
 
@@ -58,9 +68,12 @@ def main() -> None:
     parser.add_argument("--chunk-size", type=int, required=True)
     parser.add_argument("--delay", type=float, required=True)
     parser.add_argument("--corrupt", action="store_true")
+    parser.add_argument("--ready-marker", type=Path, required=True)
+    parser.add_argument("--continue-marker", type=Path, required=True)
+    parser.add_argument("--handshake-timeout", type=float, default=5.0)
     args = parser.parse_args()
-    if args.chunk_size <= 0 or args.delay < 0:
-        parser.error("chunk size must be positive and delay must be non-negative")
+    if args.chunk_size <= 0 or args.delay < 0 or args.handshake_timeout <= 0:
+        parser.error("chunk size and timeout must be positive; delay must be non-negative")
     download(
         args.destination,
         args.filename,
@@ -68,6 +81,9 @@ def main() -> None:
         chunk_size=args.chunk_size,
         delay=args.delay,
         corrupt=args.corrupt,
+        ready_marker=args.ready_marker,
+        continue_marker=args.continue_marker,
+        handshake_timeout=args.handshake_timeout,
     )
 
 
