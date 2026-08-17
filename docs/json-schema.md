@@ -35,7 +35,14 @@ Every document contains `"schema_version": 2`.
       "eta_seconds": 0.0
     }
   ],
-  "errors": []
+  "errors": [
+    {
+      "category": "monitor",
+      "code": "temporary_observation_error",
+      "message": "a redacted, user-safe diagnostic",
+      "recoverable": true
+    }
+  ]
 }
 ```
 
@@ -43,10 +50,12 @@ Rates and ETAs are nullable. Byte counts are non-negative integers. Errors conta
 stable `category`, `code`, `message`, and `recoverable` fields and never contain raw
 tokens or authorization headers.
 
-File states are `queued`, `in_progress`, `size_matched`, `verifying`, `verified`,
-`complete_unverified`, and `failed`. Only `verified` represents a successful SHA-256
-comparison. `complete_unverified` means the size matched but no supported digest was
-available.
+File states are `queued`, `measuring`, `downloading`, `waiting`, `finalizing`,
+`complete`, `inconsistent`, `size_matched`, `verifying`, `verified`,
+`complete_unverified`, and `failed`. These are the exact runtime vocabulary. Only
+`verified` represents a successful SHA-256 comparison. `complete_unverified` means
+the size matched but no supported digest was available; consumers must not relabel it
+as verified.
 
 ## Version 1 migration
 
@@ -60,3 +69,15 @@ available.
 
 Consumers must reject unsupported major schema versions and tolerate additional
 fields within version 2. Do not infer integrity from byte totals alone.
+
+## Stream semantics and confidentiality
+
+`--json` emits exactly one snapshot: the first render, so pair it with `--once` for an
+explicit one-shot observation. `--jsonl` emits one complete schema-v2 JSON object per
+observation, including the forced final observation. Lines are independently parsable;
+their order is observation order.
+
+Repository tokens, authorization headers, and credentials are never schema fields.
+Messages are redacted before serialization. Within schema version 2, fields may be
+added compatibly; existing field meanings and types are stable. A breaking removal,
+rename, type change, or semantic change requires a new schema version.

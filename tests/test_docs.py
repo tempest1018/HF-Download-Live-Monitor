@@ -1,6 +1,21 @@
+import json
+import re
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
+
+from hf_download_live_monitor.cli import cli
+from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
+from hf_download_live_monitor.models import (
+    DownloadSpec,
+    FileProgress,
+    FileState,
+    MonitorError,
+    ProgressSnapshot,
+)
+from hf_download_live_monitor.renderers import snapshot_to_dict
+from scripts.build_standalone import artifact_name
 
 
 @pytest.mark.parametrize(
@@ -79,3 +94,84 @@ def test_json_schema_documents_version_two() -> None:
     schema = Path("docs/json-schema.md").read_text(encoding="utf-8")
     assert '"schema_version": 2' in schema
     assert '"resolved_revision"' in schema
+
+
+def test_documented_cli_flags_exist_in_command_help() -> None:
+    manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
+    runner = CliRunner()
+    for command in ("attach", "run", "watch"):
+        help_text = runner.invoke(cli, [command, "--help"]).stdout
+        assert help_text
+        documented = set(
+            re.findall(r"`(--[a-z][a-z-]+)`", manual[manual.index(f"## {command.title()} mode") :])
+        )
+        for flag in documented:
+            if flag in {"--help"}:
+                continue
+            assert flag in help_text or any(
+                flag in runner.invoke(cli, [other, "--help"]).stdout
+                for other in ("attach", "run", "watch")
+            ), flag
+
+
+def test_manual_names_every_supported_standalone_artifact() -> None:
+    manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
+    platforms = (
+        ("Windows", "AMD64"),
+        ("Windows", "ARM64"),
+        ("Linux", "x86_64"),
+        ("Linux", "aarch64"),
+        ("Darwin", "x64"),
+        ("Darwin", "arm64"),
+    )
+    for system, machine in platforms:
+        assert artifact_name(system, machine) in manual
+
+
+def test_manual_exit_code_table_matches_runtime_mapping() -> None:
+    manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
+    rows = dict(re.findall(r"\| `([a-z]+)` \| (\d+) \|", manual))
+    assert rows == {category.value: str(exit_code_for(category)) for category in ErrorCategory}
+
+
+def test_schema_example_matches_runtime_snapshot_shape() -> None:
+    schema = Path("docs/json-schema.md").read_text(encoding="utf-8")
+    example = json.loads(re.search(r"```json\n(.*?)\n```", schema, re.DOTALL).group(1))  # type: ignore[union-attr]
+    fixture = snapshot_to_dict(
+        ProgressSnapshot(
+            spec=DownloadSpec("owner/repository", Path("/downloads/repository"), revision="a" * 40),
+            requested_revision="main",
+            files=(FileProgress("model.bin", 10, 10, FileState.VERIFIED, 0.0, 0.0),),
+            observed_at=1.0,
+            downloaded_bytes=10,
+            expected_bytes=10,
+            rate_bytes_per_second=0.0,
+            eta_seconds=0.0,
+            verified_files=1,
+            errors=(MonitorError("example", "safe", True, ErrorCategory.MONITOR),),
+        )
+    )
+    assert example["schema_version"] == 2
+    assert example.keys() == fixture.keys()
+    assert example["repository"].keys() == fixture["repository"].keys()
+    assert example["integrity"].keys() == fixture["integrity"].keys()
+    assert example["files"][0].keys() == fixture["files"][0].keys()
+    assert example["errors"][0].keys() == fixture["errors"][0].keys()
+
+
+def test_schema_documents_exact_runtime_state_vocabulary() -> None:
+    schema = Path("docs/json-schema.md").read_text(encoding="utf-8")
+    documented = set(
+        re.findall(r"`([a-z][a-z_]+)`", schema.split("File states are", 1)[1].split(".", 1)[0])
+    )
+    assert documented == {state.value for state in FileState}
+
+
+def test_local_markdown_links_resolve() -> None:
+    for source in (Path("README.md"), *Path("docs").glob("*.md")):
+        text = source.read_text(encoding="utf-8")
+        for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", text):
+            if "://" in target or target.startswith("#"):
+                continue
+            path = target.split("#", 1)[0]
+            assert (source.parent / path).exists(), f"{source}: {target}"

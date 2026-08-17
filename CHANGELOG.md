@@ -41,5 +41,5 @@ All notable changes follow Keep a Changelog and semantic versioning.
 
 - Add architecture-labelled standalone artifacts and SHA-256 checksum files for
   Windows, Linux, and macOS on x86-64 and ARM64.
-- Add native ARM64 CI validation and retain source/wheel packages as the portable
-  fallback.
+- Configure native ARM64 CI validation; release assets are available only after their
+  GitHub jobs pass. Retain source/wheel packages as the portable fallback.
