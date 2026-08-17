@@ -52,8 +52,13 @@ def validate_destination(
         remaining = 0
         for manifest_file in plan.manifest:
             final_path = resolve_repo_path(destination, manifest_file.filename)
-            if not _matches_digest(
-                final_path, manifest_file.expected_bytes, manifest_file.sha256
+            if not _has_reusable_final(
+                destination,
+                manifest_file.filename,
+                final_path,
+                manifest_file.expected_bytes,
+                manifest_file.sha256,
+                plan.spec.revision,
             ):
                 remaining += manifest_file.expected_bytes
 
@@ -102,12 +107,30 @@ def validate_destination(
     return PreflightResult(required, available, reserve)
 
 
-def _matches_digest(path: Path, expected_bytes: int, expected_sha256: str | None) -> bool:
-    if expected_sha256 is None:
-        return False
+def _has_reusable_final(
+    root: Path,
+    filename: str,
+    path: Path,
+    expected_bytes: int,
+    expected_sha256: str | None,
+    resolved_revision: str,
+) -> bool:
     try:
         if not path.is_file() or path.stat().st_size != expected_bytes:
             return False
+    except OSError:
+        return False
+
+    metadata_exists, metadata_commit = _read_local_metadata(root, filename)
+    if metadata_exists:
+        return metadata_commit == resolved_revision
+    return _matches_digest(path, expected_sha256)
+
+
+def _matches_digest(path: Path, expected_sha256: str | None) -> bool:
+    if expected_sha256 is None:
+        return False
+    try:
         digest = hashlib.sha256()
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -115,3 +138,31 @@ def _matches_digest(path: Path, expected_bytes: int, expected_sha256: str | None
     except OSError:
         return False
     return digest.hexdigest() == expected_sha256
+
+
+def _read_local_metadata(root: Path, filename: str) -> tuple[bool, str | None]:
+    try:
+        from huggingface_hub._local_folder import (  # pyright: ignore[reportPrivateUsage]
+            get_local_download_paths,
+            read_download_metadata,
+        )
+    except (AttributeError, ImportError):
+        return False, None
+
+    try:
+        paths = get_local_download_paths(root, filename)
+    except (OSError, ValueError):
+        return True, None
+    try:
+        paths.metadata_path.stat()
+    except FileNotFoundError:
+        return False, None
+    except OSError:
+        return True, None
+    try:
+        metadata = read_download_metadata(root, filename)
+    except Exception:
+        return True, None
+    if metadata is None:
+        return True, None
+    return True, metadata.commit_hash

@@ -5,17 +5,15 @@ from types import SimpleNamespace
 
 import pytest
 
+from hf_download_live_monitor import preflight as preflight_module
 from hf_download_live_monitor.errors import ErrorCategory
 from hf_download_live_monitor.models import DownloadPlan, DownloadSpec, ManifestFile, MonitorError
 from hf_download_live_monitor.preflight import PreflightResult, validate_destination
 
 
-def _plan(
-    root: Path, *files: tuple[str, int] | tuple[str, int, str]
-) -> DownloadPlan:
+def _plan(root: Path, *files: tuple[str, int] | tuple[str, int, str]) -> DownloadPlan:
     manifest = tuple(
-        ManifestFile(item[0], item[1], item[2] if len(item) == 3 else None)
-        for item in files
+        ManifestFile(item[0], item[1], item[2] if len(item) == 3 else None) for item in files
     )
     return DownloadPlan(
         DownloadSpec("owner/repo", root, revision="a" * 40),
@@ -71,16 +69,86 @@ def test_equal_size_file_with_wrong_digest_gets_no_credit(tmp_path: Path) -> Non
     assert result == PreflightResult(6, 6, 1)
 
 
-def test_equal_size_file_without_digest_gets_no_credit(tmp_path: Path) -> None:
+def test_equal_size_file_without_digest_gets_no_credit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     root = tmp_path / "out"
     root.mkdir()
     (root / "model.bin").write_bytes(b"same")
+    monkeypatch.setattr(
+        preflight_module,
+        "_read_local_metadata",
+        lambda root, filename: (False, None),
+    )
 
     result = validate_destination(
         _plan(root, ("model.bin", 4)), reserve_ratio=0, disk_usage=_usage(4)
     )
 
     assert result == PreflightResult(4, 4, 0)
+
+
+def test_stale_metadata_blocks_matching_digest_credit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "out"
+    root.mkdir()
+    content = b"same"
+    (root / "model.bin").write_bytes(content)
+    monkeypatch.setattr(
+        preflight_module,
+        "_read_local_metadata",
+        lambda root, filename: (True, "b" * 40),
+    )
+
+    result = validate_destination(
+        _plan(root, ("model.bin", 4, hashlib.sha256(content).hexdigest())),
+        reserve_ratio=0,
+        disk_usage=_usage(4),
+    )
+
+    assert result.required_bytes == 4
+
+
+def test_matching_resolved_revision_metadata_gets_credit_without_digest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "out"
+    root.mkdir()
+    (root / "model.bin").write_bytes(b"same")
+    monkeypatch.setattr(
+        preflight_module,
+        "_read_local_metadata",
+        lambda root, filename: (True, "a" * 40),
+    )
+
+    result = validate_destination(
+        _plan(root, ("model.bin", 4)), reserve_ratio=0, disk_usage=_usage(0)
+    )
+
+    assert result.required_bytes == 0
+
+
+def test_absent_metadata_allows_matching_digest_credit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "out"
+    root.mkdir()
+    content = b"same"
+    (root / "model.bin").write_bytes(content)
+    monkeypatch.setattr(
+        preflight_module,
+        "_read_local_metadata",
+        lambda root, filename: (False, None),
+    )
+
+    result = validate_destination(
+        _plan(root, ("model.bin", 4, hashlib.sha256(content).hexdigest())),
+        reserve_ratio=0,
+        disk_usage=_usage(0),
+    )
+
+    assert result.required_bytes == 0
 
 
 @pytest.mark.parametrize("actual", [999, 1001])
