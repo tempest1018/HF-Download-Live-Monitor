@@ -213,6 +213,18 @@ def test_cleanup_note_failure_never_masks_primary_error() -> None:
     assert str(primary) == "primary"
 
 
+def test_cleanup_note_base_exception_never_masks_primary_error() -> None:
+    class NoteInterruptingError(Exception):
+        def add_note(self, note: str) -> None:
+            raise KeyboardInterrupt
+
+    primary = NoteInterruptingError("primary")
+
+    WatchApplication._attach_close_note(primary, OSError("secret cleanup detail"))
+
+    assert str(primary) == "primary"
+
+
 def test_recoverable_metadata_failure_uses_bounded_exponential_retry() -> None:
     class FlakyRepository:
         attempts = 0

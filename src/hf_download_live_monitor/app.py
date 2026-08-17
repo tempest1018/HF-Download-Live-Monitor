@@ -177,14 +177,14 @@ class WatchApplication:
     @staticmethod
     def _attach_close_note(error: BaseException, close_error: BaseException) -> None:
         diagnostic = f"Resource cleanup also failed ({type(close_error).__name__})."
-        add_note = getattr(error, "add_note", None)
-        if add_note is not None:
-            try:
+        try:
+            add_note = getattr(error, "add_note", None)
+            if add_note is not None:
                 add_note(diagnostic)
                 return
-            except Exception:
-                pass
-        with suppress(Exception):
+        except BaseException:
+            pass
+        with suppress(BaseException):
             BaseException.__setattr__(error, "__context__", RuntimeError(diagnostic))
 
     def _prepare_plan(
