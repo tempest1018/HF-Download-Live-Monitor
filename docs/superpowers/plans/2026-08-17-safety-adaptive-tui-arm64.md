@@ -224,13 +224,19 @@ def validate_destination(
         probe.touch(exist_ok=False)
         probe.unlink()
     except OSError as exc:
-        raise MonitorError("destination_unwritable", redact_text(str(exc)), category=ErrorCategory.DESTINATION) from exc
+        raise MonitorError(
+            "destination_unwritable", redact_text(str(exc)), category=ErrorCategory.DESTINATION
+        ) from exc
     remaining = sum(_remaining_bytes(plan.spec.local_dir, item) for item in plan.manifest)
     reserve = math.ceil(remaining * reserve_ratio)
     available = disk_usage(plan.spec.local_dir).free
     required = remaining + reserve
     if available < required:
-        raise MonitorError("insufficient_disk_space", f"required={required} available={available} destination={plan.spec.local_dir}", category=ErrorCategory.DESTINATION)
+        raise MonitorError(
+            "insufficient_disk_space",
+            f"required={required} available={available} destination={plan.spec.local_dir}",
+            category=ErrorCategory.DESTINATION,
+        )
     return PreflightResult(required, available, reserve)
 ```
 
@@ -423,7 +429,9 @@ def test_monitor_failure_terminates_and_reaps_child(failure: Exception) -> None:
 def test_unresponsive_child_is_killed_and_reaped() -> None:
     process = FakeProcess(running=True, terminate_times_out=True)
     with pytest.raises(RuntimeError):
-        ManagedDownload(RaisingApplication(RuntimeError("boom")), process_factory=lambda _: process).run(SPEC)
+        ManagedDownload(
+            RaisingApplication(RuntimeError("boom")), process_factory=lambda _: process
+        ).run(SPEC)
     assert process.calls == ["terminate", "wait:5.0", "kill", "wait:None"]
 ```
 
@@ -472,7 +480,12 @@ git commit -m "fix: guarantee downloader cleanup on monitor failure"
 ```python
 @pytest.mark.parametrize(
     ("width", "expected"),
-    [(59, LayoutClass.NARROW), (60, LayoutClass.NORMAL), (109, LayoutClass.NORMAL), (110, LayoutClass.WIDE)],
+    [
+        (59, LayoutClass.NARROW),
+        (60, LayoutClass.NORMAL),
+        (109, LayoutClass.NORMAL),
+        (110, LayoutClass.WIDE),
+    ],
 )
 def test_layout_breakpoints(width: int, expected: LayoutClass) -> None:
     assert choose_layout(width, ViewMode.BALANCED) is expected

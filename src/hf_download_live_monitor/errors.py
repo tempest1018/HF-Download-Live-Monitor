@@ -14,9 +14,7 @@ class ErrorCategory(str, Enum):
     CANCELLED = "cancelled"
 
 
-_EXIT_CODES = {
-    category: index for index, category in enumerate(ErrorCategory, start=2)
-}
+_EXIT_CODES = {category: index for index, category in enumerate(ErrorCategory, start=2)}
 
 
 def exit_code_for(category: ErrorCategory) -> int:
