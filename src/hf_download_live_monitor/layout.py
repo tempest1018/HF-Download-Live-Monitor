@@ -54,6 +54,20 @@ def parse_view_mode(value: str | ViewMode) -> ViewMode:
         raise ValueError(f"invalid view mode {value!r}; expected one of: {choices}") from exc
 
 
+def choose_layout(width: int, mode: ViewMode) -> LayoutClass:
+    """Classify a positive terminal width for the selected view mode."""
+
+    if width <= 0:
+        raise ValueError("width must be positive")
+    if not isinstance(mode, ViewMode):  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise ValueError("mode must be a ViewMode")
+    if width < 60:
+        return LayoutClass.NARROW
+    if width >= 110 and mode is not ViewMode.COMPACT:
+        return LayoutClass.WIDE
+    return LayoutClass.NORMAL
+
+
 def layout_policy(
     width: int,
     mode: str | ViewMode,
@@ -63,16 +77,8 @@ def layout_policy(
 ) -> LayoutPolicy:
     """Choose presentation capabilities from width and user preferences."""
 
-    if width <= 0:
-        raise ValueError("width must be positive")
-
     view_mode = parse_view_mode(mode)
-    if width < 60:
-        layout_class = LayoutClass.NARROW
-    elif width >= 110 and view_mode is not ViewMode.COMPACT:
-        layout_class = LayoutClass.WIDE
-    else:
-        layout_class = LayoutClass.NORMAL
+    layout_class = choose_layout(width, view_mode)
 
     compact = view_mode is ViewMode.COMPACT
     detailed = view_mode is ViewMode.DETAILED

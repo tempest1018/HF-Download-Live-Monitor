@@ -5,6 +5,7 @@ import pytest
 from hf_download_live_monitor.layout import (
     LayoutClass,
     ViewMode,
+    choose_layout,
     layout_policy,
     parse_view_mode,
 )
@@ -33,6 +34,33 @@ def test_parse_view_mode_rejects_unknown_value_clearly() -> None:
 def test_layout_policy_requires_positive_width(width: int) -> None:
     with pytest.raises(ValueError, match="width must be positive"):
         layout_policy(width, ViewMode.BALANCED)
+
+
+@pytest.mark.parametrize(
+    ("width", "mode", "expected"),
+    [
+        (59, ViewMode.COMPACT, LayoutClass.NARROW),
+        (60, ViewMode.BALANCED, LayoutClass.NORMAL),
+        (109, ViewMode.DETAILED, LayoutClass.NORMAL),
+        (110, ViewMode.BALANCED, LayoutClass.WIDE),
+        (110, ViewMode.COMPACT, LayoutClass.NORMAL),
+    ],
+)
+def test_choose_layout_classifies_exact_breakpoints(
+    width: int, mode: ViewMode, expected: LayoutClass
+) -> None:
+    assert choose_layout(width, mode) is expected
+
+
+@pytest.mark.parametrize("width", [0, -1])
+def test_choose_layout_requires_positive_width(width: int) -> None:
+    with pytest.raises(ValueError, match="width must be positive"):
+        choose_layout(width, ViewMode.BALANCED)
+
+
+def test_choose_layout_requires_view_mode_enum() -> None:
+    with pytest.raises(ValueError, match="mode must be a ViewMode"):
+        choose_layout(80, "balanced")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
