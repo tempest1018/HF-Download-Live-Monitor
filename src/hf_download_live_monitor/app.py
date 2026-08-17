@@ -83,6 +83,7 @@ class WatchApplication:
         interrupt_cleanup: Callable[[], object] | None = None,
     ) -> int:
         error_in_flight = False
+        primary_error: BaseException | None = None
         active_plan: DownloadPlan | None = None
         try:
             active_plan = plan or self._prepare_plan(spec, manifest)
@@ -107,27 +108,33 @@ class WatchApplication:
                 self._sleeper(self._refresh)
         except KeyboardInterrupt:
             if handle_interrupt:
-                if active_plan is None:
+                try:
+                    if active_plan is None:
+                        return exit_code_for(ErrorCategory.CANCELLED)
+                    cleanup_error: BaseException | None = None
+                    if interrupt_cleanup is not None:
+                        try:
+                            interrupt_cleanup()
+                        except BaseException as exc:
+                            cleanup_error = exc
+                    snapshot = self._observe_and_render(active_plan, final=True)
+                    if cleanup_error is not None:
+                        raise MonitorError(
+                            "cleanup_failed",
+                            f"downloader cleanup failed ({type(cleanup_error).__name__})",
+                            category=ErrorCategory.DOWNLOADER,
+                        ) from None
+                    if snapshot.failed_files:
+                        return self._exit_code(snapshot)
                     return exit_code_for(ErrorCategory.CANCELLED)
-                cleanup_error: BaseException | None = None
-                if interrupt_cleanup is not None:
-                    try:
-                        interrupt_cleanup()
-                    except BaseException as exc:
-                        cleanup_error = exc
-                snapshot = self._observe_and_render(active_plan, final=True)
-                if cleanup_error is not None:
-                    raise MonitorError(
-                        "cleanup_failed",
-                        f"downloader cleanup failed ({type(cleanup_error).__name__})",
-                        category=ErrorCategory.DOWNLOADER,
-                    ) from cleanup_error
-                if snapshot.failed_files:
-                    return self._exit_code(snapshot)
-                return exit_code_for(ErrorCategory.CANCELLED)
+                except BaseException as exc:
+                    primary_error = exc
+                    error_in_flight = True
+                    raise
             error_in_flight = True
             raise
-        except BaseException:
+        except BaseException as exc:
+            primary_error = exc
             error_in_flight = True
             raise
         finally:
@@ -147,8 +154,11 @@ class WatchApplication:
                 except BaseException as exc:
                     if close_error is None:
                         close_error = exc
-            if close_error is not None and not error_in_flight:
-                raise close_error
+            if close_error is not None:
+                if primary_error is not None:
+                    self._attach_close_note(primary_error, close_error)
+                elif not error_in_flight:
+                    raise close_error
 
     def _observe_and_render(self, plan: DownloadPlan, *, final: bool) -> ProgressSnapshot:
         now = self._clock()
@@ -162,6 +172,15 @@ class WatchApplication:
         if snapshot.failed_files:
             return exit_code_for(ErrorCategory.INTEGRITY)
         return 0
+
+    @staticmethod
+    def _attach_close_note(error: BaseException, close_error: BaseException) -> None:
+        diagnostic = f"Resource cleanup also failed ({type(close_error).__name__})."
+        add_note = getattr(error, "add_note", None)
+        if add_note is not None:
+            add_note(diagnostic)
+        else:
+            BaseException.__setattr__(error, "__context__", RuntimeError(diagnostic))
 
     def _prepare_plan(
         self, spec: DownloadSpec, manifest: tuple[ManifestFile, ...] | None

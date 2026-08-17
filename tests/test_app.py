@@ -132,6 +132,75 @@ def test_keyboard_interrupt_final_integrity_failure_takes_precedence() -> None:
     )
 
 
+def test_interrupt_final_render_failure_survives_close_failure() -> None:
+    class Renderer(RecordingRenderer):
+        def render(self, snapshot: ProgressSnapshot) -> None:
+            super().render(snapshot)
+            if len(self.snapshots) == 2:
+                raise RuntimeError("final render failed")
+
+        def close(self) -> None:
+            raise OSError("sensitive renderer close detail")
+
+    app = WatchApplication(
+        repository=FakeRepository(),
+        observer=FakeObserver(),
+        engine=ProgressEngine(),
+        renderer=Renderer(),
+        clock=lambda: 5.0,
+        sleeper=lambda _: (_ for _ in ()).throw(KeyboardInterrupt),
+    )
+
+    import pytest
+
+    with pytest.raises(RuntimeError, match="final render failed") as caught:
+        app.run(DownloadSpec("owner/repo", Path("out")))
+    diagnostics = getattr(caught.value, "__notes__", None) or [str(caught.value.__context__)]
+    assert diagnostics == ["Resource cleanup also failed (OSError)."]
+    assert "sensitive renderer close detail" not in str(diagnostics)
+
+
+def test_interrupt_cleanup_failure_survives_all_close_failures() -> None:
+    class Renderer(RecordingRenderer):
+        def close(self) -> None:
+            raise OSError("sensitive renderer close detail")
+
+    class Engine(ProgressEngine):
+        def close(self) -> None:
+            raise RuntimeError("sensitive engine close detail")
+
+    class Controls:
+        def poll(self, state: DisplayState) -> DisplayState:
+            return state
+
+        def close(self) -> None:
+            raise ValueError("sensitive controls close detail")
+
+    app = WatchApplication(
+        repository=FakeRepository(),
+        observer=FakeObserver(),
+        engine=Engine(),
+        renderer=Renderer(),
+        controls=Controls(),
+        clock=lambda: 5.0,
+        sleeper=lambda _: (_ for _ in ()).throw(KeyboardInterrupt),
+    )
+
+    import pytest
+
+    with pytest.raises(MonitorError) as caught:
+        app.run(
+            DownloadSpec("owner/repo", Path("out")),
+            interrupt_cleanup=lambda: (_ for _ in ()).throw(OSError("secret child detail")),
+        )
+    assert caught.value.code == "cleanup_failed"
+    close_diagnostics = getattr(caught.value, "__notes__", None) or [str(caught.value.__context__)]
+    assert close_diagnostics == ["Resource cleanup also failed (OSError)."]
+    rendered = str(caught.value) + str(close_diagnostics)
+    assert "sensitive" not in rendered
+    assert "secret child detail" not in rendered
+
+
 def test_recoverable_metadata_failure_uses_bounded_exponential_retry() -> None:
     class FlakyRepository:
         attempts = 0
