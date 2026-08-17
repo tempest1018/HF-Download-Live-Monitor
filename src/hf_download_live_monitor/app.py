@@ -55,12 +55,13 @@ class WatchApplication:
         self,
         spec: DownloadSpec,
         *,
+        manifest: tuple[ManifestFile, ...] | None = None,
         once: bool = False,
         stop_when: Callable[[], bool] | None = None,
         handle_interrupt: bool = True,
     ) -> int:
         try:
-            manifest = self._load_manifest(spec)
+            manifest = manifest if manifest is not None else self._load_manifest(spec)
             while True:
                 now = self._clock()
                 observations = self._observer.observe(spec, manifest, now)

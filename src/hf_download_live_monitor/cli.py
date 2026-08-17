@@ -12,8 +12,10 @@ from rich.console import Console
 from hf_download_live_monitor.app import WatchApplication
 from hf_download_live_monitor.attach import discover_downloads, select_download
 from hf_download_live_monitor.engine import ProgressEngine
+from hf_download_live_monitor.errors import exit_code_for
 from hf_download_live_monitor.filesystem import FileSystemObserver
 from hf_download_live_monitor.models import DownloadSpec, MonitorError, RepoType
+from hf_download_live_monitor.preflight import validate_destination
 from hf_download_live_monitor.processes import system_process_provider
 from hf_download_live_monitor.renderers import (
     JsonLinesRenderer,
@@ -107,17 +109,21 @@ def run_download(
         includes=tuple(include or ()),
         excludes=tuple(exclude or ()),
     )
-    application = _make_application(
-        refresh=refresh,
-        rate_window=rate_window,
-        plain=plain,
-        json_output=json_output,
-        jsonl=jsonl,
-        no_color=no_color,
-        ascii_only=ascii_only,
-    )
     try:
-        code = ManagedDownload(application).run(spec, executable=hf_executable)
+        plan = HubRepository().prepare(spec)
+        validate_destination(plan)
+        application = _make_application(
+            refresh=refresh,
+            rate_window=rate_window,
+            plain=plain,
+            json_output=json_output,
+            jsonl=jsonl,
+            no_color=no_color,
+            ascii_only=ascii_only,
+        )
+        code = ManagedDownload(application).run(
+            plan.spec, executable=hf_executable, manifest=plan.manifest
+        )
     except MonitorError as exc:
         _exit_for_error(exc)
     except OSError as exc:
@@ -232,7 +238,7 @@ def _make_application(
 
 def _exit_for_error(exc: MonitorError) -> NoReturn:
     typer.echo(f"Error [{exc.code}]: {exc.message}", err=True)
-    raise typer.Exit(code=2) from exc
+    raise typer.Exit(code=exit_code_for(exc.category)) from exc
 
 
 def run() -> None:

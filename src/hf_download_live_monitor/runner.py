@@ -6,7 +6,7 @@ import subprocess
 from collections.abc import Callable
 from typing import Protocol
 
-from hf_download_live_monitor.models import DownloadSpec, RepoType
+from hf_download_live_monitor.models import DownloadSpec, ManifestFile, RepoType
 
 
 class ChildProcess(Protocol):
@@ -24,6 +24,7 @@ class MonitorApplication(Protocol):
         self,
         spec: DownloadSpec,
         *,
+        manifest: tuple[ManifestFile, ...] | None = None,
         once: bool = False,
         stop_when: Callable[[], bool] | None = None,
         handle_interrupt: bool = True,
@@ -60,11 +61,18 @@ class ManagedDownload:
         self._application = application
         self._process_factory = process_factory or _start_process
 
-    def run(self, spec: DownloadSpec, *, executable: str = "hf") -> int:
+    def run(
+        self,
+        spec: DownloadSpec,
+        *,
+        executable: str = "hf",
+        manifest: tuple[ManifestFile, ...] | None = None,
+    ) -> int:
         process = self._process_factory(build_hf_command(spec, executable=executable))
         try:
             self._application.run(
                 spec,
+                manifest=manifest,
                 stop_when=lambda: process.poll() is not None,
                 handle_interrupt=False,
             )

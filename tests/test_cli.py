@@ -1,7 +1,11 @@
 import click
+import pytest
 from typer.testing import CliRunner
 
+from hf_download_live_monitor import cli as cli_module
 from hf_download_live_monitor.cli import cli
+from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
+from hf_download_live_monitor.models import DownloadPlan, DownloadSpec, ManifestFile, MonitorError
 
 runner = CliRunner()
 
@@ -66,3 +70,79 @@ def test_help_options_remain_testable_when_color_is_forced(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "--local-dir" in _plain(result.stdout)
+
+
+def test_run_prepares_and_preflights_before_start_using_resolved_revision(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    events: list[object] = []
+    resolved = "a" * 40
+
+    class Repository:
+        def prepare(self, spec: DownloadSpec) -> DownloadPlan:
+            events.append("prepare")
+            return DownloadPlan(
+                DownloadSpec(spec.repo, spec.local_dir, revision=resolved),
+                spec.revision,
+                (ManifestFile("model.bin", 1),),
+            )
+
+    class Download:
+        def __init__(self, application: object) -> None:
+            events.append("managed")
+
+        def run(self, spec: DownloadSpec, *, executable: str, manifest: object) -> int:
+            events.append(("start", spec.revision, manifest))
+            return 0
+
+    monkeypatch.setattr(cli_module, "HubRepository", Repository)
+    monkeypatch.setattr(
+        cli_module, "validate_destination", lambda plan: events.append(("preflight", plan))
+    )
+    monkeypatch.setattr(cli_module, "_make_application", lambda **_: object())
+    monkeypatch.setattr(cli_module, "ManagedDownload", Download)
+
+    result = runner.invoke(cli, ["run", "owner/repo", "--local-dir", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert events[0] == "prepare"
+    assert events[1][0] == "preflight"
+    assert events[2] == "managed"
+    assert events[3][0:2] == ("start", resolved)
+
+
+def test_run_preflight_failure_never_starts_child_and_uses_stable_exit_code(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    plan = DownloadPlan(
+        DownloadSpec("owner/repo", tmp_path, revision="a" * 40),
+        "main",
+        (ManifestFile("model.bin", 1),),
+    )
+
+    class Repository:
+        def prepare(self, spec: DownloadSpec) -> DownloadPlan:
+            return plan
+
+    monkeypatch.setattr(cli_module, "HubRepository", Repository)
+    monkeypatch.setattr(
+        cli_module,
+        "validate_destination",
+        lambda _: (_ for _ in ()).throw(
+            MonitorError(
+                "insufficient_disk_space",
+                "not enough space",
+                category=ErrorCategory.DESTINATION,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "ManagedDownload",
+        lambda _: (_ for _ in ()).throw(AssertionError("child constructed")),
+    )
+
+    result = runner.invoke(cli, ["run", "owner/repo", "--local-dir", str(tmp_path)])
+
+    assert result.exit_code == exit_code_for(ErrorCategory.DESTINATION)
+    assert "insufficient_disk_space" in result.stderr
