@@ -211,7 +211,9 @@ def test_interrupt_reconciliation_contract_is_documented_without_old_claims() ->
         "exit code `9`",
         "exit code `8`",
         "exit code `6`",
-        "stopped and reaped",
+        "attempts to stop and reap",
+        "when cleanup succeeds",
+        "child reaping is not confirmed",
         "cleanup failure takes precedence",
         "second interrupt",
     ):
@@ -222,3 +224,9 @@ def test_interrupt_reconciliation_contract_is_documented_without_old_claims() ->
     )
     assert "handled Ctrl+C in `watch` or `attach` mode" not in manual
     assert "Ctrl+C returns `0`" not in combined
+    for unconditional in (
+        "Ctrl+C stops and reaps",
+        "Managed Ctrl+C stops and reaps",
+        "stopped and reaped before final reconciliation",
+    ):
+        assert unconditional not in combined

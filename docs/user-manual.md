@@ -366,13 +366,15 @@ If `hf` is installed under a different executable name or path:
 hf-download-live-monitor run owner/repository --local-dir ./download --hf-executable /path/to/hf
 ```
 
-On Ctrl+C, HF Download Live Monitor asks the child downloader to terminate and waits
-up to five seconds. If shutdown times out or cleanup is interrupted again, it kills the
-child. After the child is stopped and reaped, the monitor performs its forced final
-observation, verification, and render. When cleanup succeeds, cancellation returns exit
-code `9` unless a final integrity failure takes precedence with exit code `8`. If
-cleanup fails, including a second interrupt during cleanup, final reconciliation still
-runs; the cleanup failure takes precedence and returns downloader exit code `6`.
+On Ctrl+C, HF Download Live Monitor attempts to stop and reap the child downloader: it
+asks the child to terminate and waits up to five seconds, then kills it if shutdown
+times out or cleanup is interrupted again. The monitor performs its forced final
+observation, verification, and render after that cleanup attempt. When cleanup succeeds,
+the child is stopped and reaped, and cancellation returns exit code `9` unless a final
+integrity failure takes precedence with exit code `8`. If cleanup fails, including a
+second interrupt during cleanup, child reaping is not confirmed; final reconciliation
+still runs, then the cleanup failure takes precedence and returns downloader exit code
+`6`.
 
 ## Repository types and file selection
 
@@ -428,8 +430,8 @@ Select the starting density with `--view compact`, `--view balanced`, or
 `--view detailed`. During a run, press `v` to cycle density, `d` for file details,
 `e` for recent events, `?` for help, or `q` for graceful cancellation. Keyboard input
 is optional; monitoring continues if it cannot be initialized. Dashboard `q` performs
-its final reconciliation before managed runner cleanup; Ctrl+C stops and reaps a
-managed child first, then performs final reconciliation.
+its final reconciliation before managed runner cleanup; Ctrl+C first attempts to stop
+and reap a managed child, then performs final reconciliation.
 
 Use `--reduced-motion` to disable animation, `--ascii` when Unicode is unsuitable,
 and `--no-color` when color is unavailable. Essential state never depends on color or
@@ -462,12 +464,14 @@ hf-download-live-monitor watch owner/repository --local-dir ./download --jsonl >
 
 `--jsonl` writes one independent JSON object per observation and is suitable for
 streaming automation. It includes the forced final observation for downloader stop,
-dashboard `q`, and handled Ctrl+C paths. With managed Ctrl+C, the child is stopped and
-reaped before final reconciliation. A cleanup failure or second interrupt is retained
-while that final JSONL observation is produced, then takes precedence as downloader
-exit code `6`. In `watch` and `attach`, there is no managed child or child-cleanup
-failure path, but Ctrl+C still forces the final observation. The current structured
-schema version is `2`; see [Structured output schema](json-schema.md).
+dashboard `q`, and handled Ctrl+C paths. Managed Ctrl+C attempts to stop and reap the
+child before final reconciliation; the child is confirmed stopped and reaped only when
+cleanup succeeds. If cleanup fails or receives a second interrupt, child reaping is not
+confirmed. That failure is retained while the final JSONL observation is produced,
+then takes precedence as downloader exit code `6`. In `watch` and `attach`, there is no
+managed child or child-cleanup failure path, but Ctrl+C still forces the final
+observation. The current structured schema version is `2`; see [Structured output
+schema](json-schema.md).
 
 The managed downloader started by `run` inherits the terminal's standard streams. Depending on the installed Hugging Face CLI version, its own messages can appear alongside monitor output. For a guaranteed monitor-only JSON file, start the download separately and use `watch --json --once`, `watch --jsonl`, or an attached process whose output remains in its original terminal.
 

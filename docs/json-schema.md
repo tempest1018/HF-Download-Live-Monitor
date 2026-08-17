@@ -76,14 +76,16 @@ fields within version 2. Do not infer integrity from byte totals alone.
 `--json` emits exactly one snapshot: the first render. With `--once`, that first render
 is also a final one-shot observation. `--jsonl` emits one complete schema-v2 JSON
 object per observation. It includes the forced final observation for the managed
-downloader stop condition, dashboard `q`, and handled Ctrl+C. Managed Ctrl+C stops and
-reaps the child before that final reconciliation; `watch` and `attach` have no managed
-child but still emit their final observation. When managed cleanup succeeds,
-cancellation returns exit code `9` unless a final integrity failure takes precedence
-with exit code `8`. Cleanup failure, including a second interrupt during cleanup, is
-retained while final reconciliation and serialization still run; cleanup failure takes
-precedence over snapshot integrity and maps to downloader exit code `6`. Lines are
-independently parsable, and their order is observation order.
+downloader stop condition, dashboard `q`, and handled Ctrl+C. Managed Ctrl+C attempts
+to stop and reap the child before that final reconciliation; the child is confirmed
+stopped and reaped when cleanup succeeds. `watch` and `attach` have no managed child
+but still emit their final observation. With successful managed cleanup, cancellation
+returns exit code `9` unless a final integrity failure takes precedence with exit code
+`8`. On cleanup failure, including a second interrupt during cleanup, child reaping is
+not confirmed. The failure is retained while final reconciliation and serialization
+still run; cleanup failure takes precedence over snapshot integrity and maps to
+downloader exit code `6`. Lines are independently parsable, and their order is
+observation order.
 
 Repository tokens, authorization headers, and credentials are never schema fields.
 Error serialization redacts known token-assignment and bearer-authorization patterns
