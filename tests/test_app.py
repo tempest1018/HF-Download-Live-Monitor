@@ -201,6 +201,18 @@ def test_interrupt_cleanup_failure_survives_all_close_failures() -> None:
     assert "secret child detail" not in rendered
 
 
+def test_cleanup_note_failure_never_masks_primary_error() -> None:
+    class NoteRejectingError(Exception):
+        def add_note(self, note: str) -> None:
+            raise TypeError("notes are unavailable")
+
+    primary = NoteRejectingError("primary")
+
+    WatchApplication._attach_close_note(primary, OSError("secret cleanup detail"))
+
+    assert str(primary) == "primary"
+
+
 def test_recoverable_metadata_failure_uses_bounded_exponential_retry() -> None:
     class FlakyRepository:
         attempts = 0

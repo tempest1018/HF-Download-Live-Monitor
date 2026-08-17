@@ -220,6 +220,19 @@ def test_prepare_maps_hub_errors(
     assert "hf_secret" not in caught.value.message
 
 
+def test_response_status_supports_errors_without_response() -> None:
+    from hf_download_live_monitor.repository import _response_status
+
+    assert _response_status(Exception("offline")) is None
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 503])
+def test_response_status_reads_available_status(status: int) -> None:
+    from hf_download_live_monitor.repository import _response_status
+
+    assert _response_status(SimpleNamespace(response=SimpleNamespace(status_code=status))) == status
+
+
 def test_missing_file_metadata_is_repository_error() -> None:
     api = FakeApi([SimpleNamespace(rfilename="unknown", size=None, lfs=None)])
     with pytest.raises(MonitorError) as caught:

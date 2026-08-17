@@ -183,6 +183,7 @@ def _workflow_triggers(workflow: dict[str, object]) -> dict[str, object]:
 def test_ci_keeps_x64_matrix_and_adds_native_arm64_validation() -> None:
     workflow = _workflow("ci")
     assert set(_workflow_triggers(workflow)) == {"push", "pull_request", "workflow_dispatch"}
+    assert _workflow_triggers(workflow)["push"] == {"branches": ["main"]}
     jobs = workflow["jobs"]
     assert isinstance(jobs, dict)
     assert jobs["test"]["strategy"]["matrix"] == {

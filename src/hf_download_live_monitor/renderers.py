@@ -238,7 +238,13 @@ def _aggregate_panel(snapshot: ProgressSnapshot, policy: LayoutPolicy, ascii_onl
     )
     if policy.show_sparkline and snapshot.rate_history:
         text += "\nrate " + _sparkline(snapshot.rate_history[-24:], ascii_only)
-    progress = ProgressBar(total=100.0, completed=percent, width=None)
+    progress: RenderableType
+    if ascii_only:
+        cells = 20
+        completed_cells = min(cells, int(percent / 100.0 * cells))
+        progress = Text(f"[{'#' * completed_cells}{'-' * (cells - completed_cells)}]")
+    else:
+        progress = ProgressBar(total=100.0, completed=percent, width=None)
     return _panel(Group(Text(text), progress), "Progress", ascii_only)
 
 

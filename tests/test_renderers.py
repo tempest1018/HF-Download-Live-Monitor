@@ -130,6 +130,21 @@ def test_rich_renderer_adapts_at_all_boundary_widths_and_ascii() -> None:
         output.encode("ascii")
 
 
+def test_ascii_rich_renderer_is_ascii_on_forced_terminal(monkeypatch) -> None:
+    def reject_unicode_progress(*args, **kwargs):
+        raise AssertionError("ASCII mode must not construct Rich's Unicode progress bar")
+
+    monkeypatch.setattr("hf_download_live_monitor.renderers.ProgressBar", reject_unicode_progress)
+    stream = io.StringIO()
+    console = Console(file=stream, force_terminal=True, width=59, color_system=None)
+    renderer = RichRenderer(console, ascii_only=True, reduced_motion=True)
+
+    renderer.render(varied_sample())
+    renderer.close()
+
+    stream.getvalue().encode("ascii")
+
+
 def test_attention_orders_active_and_failed_before_completed() -> None:
     snapshot = sample()
     snapshot = replace(

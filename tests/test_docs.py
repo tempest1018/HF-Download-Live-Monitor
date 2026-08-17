@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
+from typer.main import get_command
 
 from hf_download_live_monitor.cli import cli
 from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
@@ -98,20 +98,20 @@ def test_json_schema_documents_version_two() -> None:
 
 def test_documented_cli_flags_exist_in_command_help() -> None:
     manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
-    runner = CliRunner()
-    help_by_command = {
-        command: runner.invoke(cli, [command, "--help"]).stdout
-        for command in ("attach", "run", "watch")
-    }
+    root = get_command(cli)
     for command in ("attach", "run", "watch"):
-        help_text = help_by_command[command]
-        assert help_text
+        command_flags = {
+            option
+            for parameter in root.commands[command].params  # type: ignore[attr-defined]
+            for option in getattr(parameter, "opts", ())
+            if option.startswith("--")
+        }
         section_start = manual.index(f"## {command.title()} mode")
         section_end = manual.find("\n## ", section_start + 1)
         section = manual[section_start : None if section_end == -1 else section_end]
         documented = set(re.findall(r"(?<![a-z-])(--[a-z][a-z-]+)", section))
         for flag in documented:
-            assert flag in help_text, f"{command}: {flag}"
+            assert flag in command_flags, f"{command}: {flag}"
 
 
 def test_manual_names_every_supported_standalone_artifact() -> None:

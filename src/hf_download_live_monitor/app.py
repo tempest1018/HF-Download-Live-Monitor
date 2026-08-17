@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from typing import Protocol
 
 from hf_download_live_monitor.controls import DisplayState
@@ -178,8 +179,12 @@ class WatchApplication:
         diagnostic = f"Resource cleanup also failed ({type(close_error).__name__})."
         add_note = getattr(error, "add_note", None)
         if add_note is not None:
-            add_note(diagnostic)
-        else:
+            try:
+                add_note(diagnostic)
+                return
+            except Exception:
+                pass
+        with suppress(Exception):
             BaseException.__setattr__(error, "__context__", RuntimeError(diagnostic))
 
     def _prepare_plan(

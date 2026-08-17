@@ -29,6 +29,12 @@ class HubApi(Protocol):
     def space_info(self, repo_id: str, **kwargs: Any) -> Any: ...
 
 
+def _response_status(exc: object) -> int | None:
+    response: Any = getattr(exc, "response", None)
+    status: Any = getattr(response, "status_code", None)
+    return status if isinstance(status, int) else None
+
+
 class HubRepository:
     def __init__(self, api: HubApi | None = None) -> None:
         self._api: HubApi = cast(HubApi, api if api is not None else HfApi())
@@ -42,14 +48,14 @@ class HubRepository:
         except GatedRepoError as exc:
             raise self._error("gated_repository", exc, ErrorCategory.ACCESS) from exc
         except RepositoryNotFoundError as exc:
-            status = exc.response.status_code if exc.response is not None else None
+            status = _response_status(exc)
             if status == 401:
                 raise self._error("authentication_required", exc, ErrorCategory.ACCESS) from exc
             if status == 403:
                 raise self._error("access_denied", exc, ErrorCategory.ACCESS) from exc
             raise self._error("repository_not_found", exc, ErrorCategory.REPOSITORY) from exc
         except HfHubHTTPError as exc:
-            status = exc.response.status_code if exc.response is not None else None
+            status = _response_status(exc)
             if status == 401:
                 raise self._error("authentication_required", exc, ErrorCategory.ACCESS) from exc
             if status == 403:
