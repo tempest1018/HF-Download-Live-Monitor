@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any
 
-from hf_download_live_monitor.models import DownloadSpec, RepoType
+from hf_download_live_monitor.models import DownloadPlan, DownloadSpec, ManifestFile, RepoType
 from hf_download_live_monitor.runner import ManagedDownload, build_hf_command
 
 
@@ -54,15 +54,18 @@ class FakeProcess:
 
 
 class FakeApplication:
-    def __init__(self, interrupt: bool = False) -> None:
+    def __init__(self, interrupt: bool = False, code: int = 0) -> None:
         self.interrupt = interrupt
+        self.code = code
         self.stop_seen = False
+        self.plan: DownloadPlan | None = None
 
     def run(self, spec: DownloadSpec, **kwargs: Any) -> int:
         if self.interrupt:
             raise KeyboardInterrupt
         self.stop_seen = kwargs["stop_when"]()
-        return 0
+        self.plan = kwargs.get("plan")
+        return self.code
 
 
 def test_managed_download_propagates_child_exit_and_stop_condition() -> None:
@@ -72,6 +75,24 @@ def test_managed_download_propagates_child_exit_and_stop_condition() -> None:
     result = runner.run(DownloadSpec("owner/repo", Path("out")))
     assert result == 7
     assert application.stop_seen
+
+
+def test_managed_download_forwards_prepared_plan() -> None:
+    process = FakeProcess()
+    application = FakeApplication()
+    spec = DownloadSpec("owner/repo", Path("out"), revision="a" * 40)
+    plan = DownloadPlan(spec, "main", (ManifestFile("model.bin", 1),))
+
+    ManagedDownload(application, process_factory=lambda _: process).run(spec, plan=plan)
+
+    assert application.plan is plan
+
+
+def test_managed_download_preserves_monitor_failure_code() -> None:
+    process = FakeProcess(code=0)
+    runner = ManagedDownload(FakeApplication(code=8), process_factory=lambda _: process)
+
+    assert runner.run(DownloadSpec("owner/repo", Path("out"))) == 8
 
 
 def test_managed_download_terminates_on_interrupt() -> None:

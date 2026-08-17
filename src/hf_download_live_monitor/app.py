@@ -7,16 +7,21 @@ from collections.abc import Callable
 from typing import Protocol
 
 from hf_download_live_monitor.engine import ProgressEngine
+from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
 from hf_download_live_monitor.models import (
+    DownloadPlan,
     DownloadSpec,
     FileObservation,
     ManifestFile,
     MonitorError,
+    ProgressSnapshot,
 )
 from hf_download_live_monitor.renderers import Renderer
 
 
 class Repository(Protocol):
+    def prepare(self, spec: DownloadSpec) -> DownloadPlan: ...
+
     def manifest(self, spec: DownloadSpec) -> tuple[ManifestFile, ...]: ...
 
 
@@ -56,34 +61,72 @@ class WatchApplication:
         spec: DownloadSpec,
         *,
         manifest: tuple[ManifestFile, ...] | None = None,
+        plan: DownloadPlan | None = None,
         once: bool = False,
         stop_when: Callable[[], bool] | None = None,
         handle_interrupt: bool = True,
     ) -> int:
+        error_in_flight = False
         try:
-            manifest = manifest if manifest is not None else self._load_manifest(spec)
+            plan = plan or self._prepare_plan(spec, manifest)
+            if once:
+                snapshot = self._observe_and_render(plan, final=True)
+                return self._exit_code(snapshot)
             while True:
-                now = self._clock()
-                observations = self._observer.observe(spec, manifest, now)
-                snapshot = self._engine.update(spec, manifest, observations, now)
-                self._renderer.render(snapshot)
-                if once or (stop_when is not None and stop_when()):
-                    return 0
+                self._observe_and_render(plan, final=False)
+                if stop_when is not None and stop_when():
+                    snapshot = self._observe_and_render(plan, final=True)
+                    return self._exit_code(snapshot)
                 self._sleeper(self._refresh)
         except KeyboardInterrupt:
             if handle_interrupt:
                 return 0
+            error_in_flight = True
+            raise
+        except BaseException:
+            error_in_flight = True
             raise
         finally:
-            self._renderer.close()
+            close_error: BaseException | None = None
+            try:
+                self._renderer.close()
+            except BaseException as exc:
+                close_error = exc
+            try:
+                self._engine.close()
+            except BaseException as exc:
+                if close_error is None:
+                    close_error = exc
+            if close_error is not None and not error_in_flight:
+                raise close_error
 
-    def _load_manifest(self, spec: DownloadSpec) -> tuple[ManifestFile, ...]:
+    def _observe_and_render(self, plan: DownloadPlan, *, final: bool) -> ProgressSnapshot:
+        now = self._clock()
+        observations = self._observer.observe(plan.spec, plan.manifest, now)
+        snapshot = self._engine.update(plan, observations, now=now, final=final)
+        self._renderer.render(snapshot)
+        return snapshot
+
+    @staticmethod
+    def _exit_code(snapshot: ProgressSnapshot) -> int:
+        if snapshot.failed_files:
+            return exit_code_for(ErrorCategory.INTEGRITY)
+        return 0
+
+    def _prepare_plan(
+        self, spec: DownloadSpec, manifest: tuple[ManifestFile, ...] | None
+    ) -> DownloadPlan:
+        if manifest is not None:
+            return DownloadPlan(spec, spec.revision, manifest)
+        return self._load_plan(spec)
+
+    def _load_plan(self, spec: DownloadSpec) -> DownloadPlan:
         delays = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
         for delay in delays:
             try:
-                return self._repository.manifest(spec)
+                return self._repository.prepare(spec)
             except MonitorError as exc:
                 if not exc.recoverable:
                     raise
                 self._sleeper(delay)
-        return self._repository.manifest(spec)
+        return self._repository.prepare(spec)

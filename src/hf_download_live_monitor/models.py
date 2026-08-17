@@ -134,7 +134,20 @@ class ProgressSnapshot:
     expected_bytes: int
     rate_bytes_per_second: float | None
     eta_seconds: float | None
+    requested_revision: str = ""
+    verified_files: int = 0
+    complete_unverified_files: int = 0
+    failed_files: int = 0
+    rate_history: tuple[float, ...] = ()
     errors: tuple[MonitorError, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.requested_revision:
+            object.__setattr__(self, "requested_revision", self.spec.revision)
+
+    @property
+    def resolved_revision(self) -> str:
+        return self.spec.revision
 
 
 @dataclass(frozen=True, slots=True)

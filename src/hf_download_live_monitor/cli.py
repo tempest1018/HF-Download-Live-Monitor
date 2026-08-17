@@ -122,9 +122,7 @@ def run_download(
             no_color=no_color,
             ascii_only=ascii_only,
         )
-        code = ManagedDownload(application).run(
-            plan.spec, executable=hf_executable, manifest=plan.manifest
-        )
+        code = ManagedDownload(application).run(plan.spec, executable=hf_executable, plan=plan)
     except MonitorError as exc:
         _exit_for_error(exc)
     except OSError as exc:

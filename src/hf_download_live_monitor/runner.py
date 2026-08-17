@@ -6,7 +6,7 @@ import subprocess
 from collections.abc import Callable
 from typing import Protocol
 
-from hf_download_live_monitor.models import DownloadSpec, ManifestFile, RepoType
+from hf_download_live_monitor.models import DownloadPlan, DownloadSpec, ManifestFile, RepoType
 
 
 class ChildProcess(Protocol):
@@ -25,6 +25,7 @@ class MonitorApplication(Protocol):
         spec: DownloadSpec,
         *,
         manifest: tuple[ManifestFile, ...] | None = None,
+        plan: DownloadPlan | None = None,
         once: bool = False,
         stop_when: Callable[[], bool] | None = None,
         handle_interrupt: bool = True,
@@ -67,16 +68,19 @@ class ManagedDownload:
         *,
         executable: str = "hf",
         manifest: tuple[ManifestFile, ...] | None = None,
+        plan: DownloadPlan | None = None,
     ) -> int:
         process = self._process_factory(build_hf_command(spec, executable=executable))
         try:
-            self._application.run(
+            monitor_code = self._application.run(
                 spec,
                 manifest=manifest,
+                plan=plan,
                 stop_when=lambda: process.poll() is not None,
                 handle_interrupt=False,
             )
-            return process.wait()
+            child_code = process.wait()
+            return monitor_code or child_code
         except KeyboardInterrupt:
             process.terminate()
             try:

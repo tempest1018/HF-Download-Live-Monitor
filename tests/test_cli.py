@@ -91,8 +91,8 @@ def test_run_prepares_and_preflights_before_start_using_resolved_revision(
         def __init__(self, application: object) -> None:
             events.append("managed")
 
-        def run(self, spec: DownloadSpec, *, executable: str, manifest: object) -> int:
-            events.append(("start", spec.revision, manifest))
+        def run(self, spec: DownloadSpec, *, executable: str, plan: DownloadPlan) -> int:
+            events.append(("start", spec.revision, plan))
             return 0
 
     monkeypatch.setattr(cli_module, "HubRepository", Repository)
@@ -165,7 +165,7 @@ def test_run_launch_failure_is_redacted_downloader_error(
         def __init__(self, application: object) -> None:
             pass
 
-        def run(self, spec: DownloadSpec, *, executable: str, manifest: object) -> int:
+        def run(self, spec: DownloadSpec, *, executable: str, plan: DownloadPlan) -> int:
             raise OSError("token=hf_secret")
 
     monkeypatch.setattr(cli_module, "HubRepository", Repository)
