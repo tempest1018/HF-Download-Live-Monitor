@@ -53,6 +53,14 @@ class IntegrityVerifier:
         self._closed = False
 
     def request(self, path: Path, expected: str | None) -> VerificationResult:
+        result, key, future = self._request(path, expected)
+        if key is not None and future is not None and future.done():
+            return self._reconcile(key, future)
+        return result
+
+    def _request(
+        self, path: Path, expected: str | None
+    ) -> tuple[VerificationResult, _Key | None, Future[VerificationResult] | None]:
         resolved = path.resolve()
         digest = _validate_digest(expected)
         with self._lock:
@@ -60,34 +68,40 @@ class IntegrityVerifier:
                 raise RuntimeError("integrity verifier is closed")
         identity, failure = _identity_or_failure(resolved, digest)
         if failure is not None:
-            return failure
+            return failure, None, None
         assert identity is not None
         if digest is None:
-            return VerificationResult(resolved, identity, None, None, FileState.COMPLETE_UNVERIFIED)
+            return (
+                VerificationResult(resolved, identity, None, None, FileState.COMPLETE_UNVERIFIED),
+                None,
+                None,
+            )
         key = (resolved, identity, digest)
         with self._lock:
             if self._closed:
                 raise RuntimeError("integrity verifier is closed")
             cached = self._cache.get(key)
             if cached is not None:
-                return cached
+                return cached, None, None
             future = self._futures.get(key)
             if future is None:
                 future = self._executor.submit(self._verify, resolved, identity, digest)
                 self._futures[key] = future
-                return VerificationResult(resolved, identity, digest, None, FileState.SIZE_MATCHED)
-            if not future.done():
-                return VerificationResult(resolved, identity, digest, None, FileState.VERIFYING)
-        return self._reconcile(key, future)
+                return (
+                    VerificationResult(resolved, identity, digest, None, FileState.SIZE_MATCHED),
+                    key,
+                    future,
+                )
+            return (
+                VerificationResult(resolved, identity, digest, None, FileState.VERIFYING),
+                key,
+                future,
+            )
 
     def verify_now(self, path: Path, expected: str | None) -> VerificationResult:
-        result = self.request(path, expected)
-        if result.state not in {FileState.SIZE_MATCHED, FileState.VERIFYING}:
+        result, key, future = self._request(path, expected)
+        if key is None or future is None:
             return result
-        assert result.identity is not None and result.expected is not None
-        key = (result.path, result.identity, result.expected)
-        with self._lock:
-            future = self._futures[key]
         return self._reconcile(key, future)
 
     def _reconcile(self, key: _Key, future: Future[VerificationResult]) -> VerificationResult:

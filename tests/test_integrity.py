@@ -1,5 +1,6 @@
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
@@ -174,3 +175,26 @@ def test_worker_pool_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         time.sleep(0.02)
         assert peak == 1
         gate.set()
+
+
+def test_verify_now_survives_reconciliation_after_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "file.bin"
+    path.write_bytes(b"abc")
+    verifier = IntegrityVerifier()
+    original_request = verifier._request
+
+    def reconciled_request(candidate: Path, expected: str | None):
+        result, key, future = original_request(candidate, expected)
+        if key is not None and future is not None:
+            with ThreadPoolExecutor(max_workers=1) as reconciler:
+                reconciler.submit(verifier._reconcile, key, future).result()
+        return result, key, future
+
+    monkeypatch.setattr(verifier, "_request", reconciled_request)
+    try:
+        result = verifier.verify_now(path, SHA_ABC)
+    finally:
+        verifier.close()
+    assert result.state is FileState.VERIFIED
