@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from hf_download_live_monitor.errors import ErrorCategory
+
 
 class RepoType(str, Enum):
     MODEL = "model"
@@ -106,6 +108,7 @@ class MonitorError(Exception):
     code: str
     message: str
     recoverable: bool = False
+    category: ErrorCategory = ErrorCategory.MONITOR
 
     def __post_init__(self) -> None:
         if not self.code.strip():
@@ -116,6 +119,14 @@ class MonitorError(Exception):
 
     def __str__(self) -> str:
         return self.message
+
+    def to_dict(self) -> dict[str, str | bool]:
+        return {
+            "category": self.category.value,
+            "code": self.code,
+            "message": self.message,
+            "recoverable": self.recoverable,
+        }
 
 
 def _validate_filename(filename: str) -> None:
