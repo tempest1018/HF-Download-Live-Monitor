@@ -57,3 +57,25 @@ def test_manual_uses_canonical_product_and_command() -> None:
     manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
     assert manual.startswith("# HF Download Live Monitor User Manual\n")
     assert "hf-download-live-monitor --help" in manual
+
+
+@pytest.mark.parametrize(
+    "required",
+    [
+        "Adaptive Focus",
+        "ARM64",
+        "complete_unverified",
+        "verified",
+        "--reduced-motion",
+        "--view",
+    ],
+)
+def test_manual_documents_new_public_contract(required: str) -> None:
+    manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
+    assert required in manual
+
+
+def test_json_schema_documents_version_two() -> None:
+    schema = Path("docs/json-schema.md").read_text(encoding="utf-8")
+    assert '"schema_version": 2' in schema
+    assert '"resolved_revision"' in schema

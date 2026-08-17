@@ -81,6 +81,12 @@ On Windows, `py --version` may work when `python --version` does not.
 
 ### Standalone executable
 
+Tagged releases use architecture-labelled filenames for Windows, Linux, and macOS on
+both x86-64 and ARM64. Download the matching `.sha256` file and verify it before
+running the executable. If a standalone build is unavailable, install the
+architecture-neutral Python wheel instead. Native ARM64 jobs validate ARM64 releases;
+an x86-64 executable is never relabelled as ARM64.
+
 The standalone executable does not require a separate Python installation for `watch` or `attach`. `run` still launches the official external `hf` command, so install the Hugging Face CLI separately or pass its path with `--hf-executable`. Download standalone HF Download Live Monitor files only from this project's GitHub Releases page and verify their checksums before running them.
 
 ### Hugging Face access
@@ -388,6 +394,21 @@ Only one of `--plain`, `--json`, or `--jsonl` may be selected.
 
 ### Interactive display
 
+The default interactive interface is **Adaptive Focus**. It emphasizes repository
+identity, immutable revision, total progress, transfer rate, ETA, integrity status,
+and files that need attention. It recalculates its layout on every refresh: narrow
+terminals use one concise column, normal terminals add throughput and preflight
+context, and wide terminals can place aggregate and telemetry panels side by side.
+
+Select the starting density with `--view compact`, `--view balanced`, or
+`--view detailed`. During a run, press `v` to cycle density, `d` for file details,
+`e` for recent events, `?` for help, or `q` for graceful cancellation. Keyboard input
+is optional; monitoring continues if it cannot be initialized.
+
+Use `--reduced-motion` to disable animation, `--ascii` when Unicode is unsuitable,
+and `--no-color` when color is unavailable. Essential state never depends on color or
+motion alone.
+
 The default on a terminal is a live Rich table. It shows file progress, state, speed, and aggregate totals.
 
 ### Plain text
@@ -427,6 +448,37 @@ Common file states:
 - `inconsistent`: final size does not match repository metadata.
 
 ## Exit status
+
+Success is `0`. Stable error categories use these codes: usage/configuration `2`,
+authentication or access `3`, repository/revision/metadata `4`, destination or disk
+capacity `5`, downloader failure `6`, monitor/render failure `7`, integrity failure
+`8`, and user cancellation `9`.
+
+## Preflight, revisions, and integrity
+
+Managed runs finish all mandatory checks before creating the downloader process. HF
+Download Live Monitor verifies authentication and gated access, resolves a branch or
+tag to a full immutable commit SHA, retrieves a usable manifest, creates and tests the
+destination, and checks disk space with conservative overhead and a safety margin.
+
+File states distinguish byte completion from cryptographic verification:
+
+- `queued` and `in_progress`: content is absent or still growing.
+- `size_matched` and `verifying`: expected bytes exist and hashing is pending.
+- `verified`: size and the expected SHA-256 digest both match.
+- `complete_unverified`: size matches, but no supported digest was supplied.
+- `failed`: size or digest is inconsistent with repository metadata.
+
+Only `verified` means cryptographically verified. After child exit, the monitor forces
+a final observation and completes eligible verification; a successful downloader
+exit cannot hide missing or corrupt output.
+
+## Automation and schema compatibility
+
+`--plain` is intended for readable logs. `--json` emits a final snapshot and `--jsonl`
+emits successive snapshots using schema version 2. It separates requested and resolved
+revisions and distinguishes verified, `complete_unverified`, and failed counts. See
+`docs/json-schema.md` for the exact contract and version 1 migration table.
 
 - `0` means the monitor completed normally, produced a requested one-time observation, or was stopped cleanly in `watch` or `attach` mode.
 - `2` is used for invalid CLI usage and classified monitor errors such as a missing repository or unsupported selection.

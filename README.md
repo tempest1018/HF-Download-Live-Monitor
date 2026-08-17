@@ -77,6 +77,21 @@ Tagged releases are configured to publish wheels and source distributions throug
 
 ## Platforms and privacy
 
+Interactive terminals use the responsive **Adaptive Focus** dashboard. It selects a
+narrow, normal, or wide arrangement whenever the terminal is resized; choose the
+starting information density with `--view compact`, `--view balanced`, or
+`--view detailed`. Use `--reduced-motion`, `--ascii`, or `--no-color` for accessibility
+and compatibility. Redirected output automatically remains readable in logs.
+
+Before starting a managed download, the application resolves the requested revision
+to an immutable commit, checks repository access and destination capacity, and later
+verifies SHA-256 metadata when Hugging Face supplies it. A size-complete file without
+a supported digest is reported as `complete_unverified`, never as verified.
+
+Python wheels remain the universal fallback on every supported architecture. Tagged
+releases provide checksummed standalone builds for Windows, Linux, and macOS on both
+x86-64 and ARM64.
+
 Explicit watch mode works on native Windows, WSL, Linux, and macOS. It queries repository metadata through `huggingface_hub` and observes only the selected local directory. HF Download Live Monitor has no telemetry and does not store credentials. Tokens are never included in structured output.
 
 See [architecture](docs/architecture.md), [JSON schema](docs/json-schema.md), and [security policy](SECURITY.md).
