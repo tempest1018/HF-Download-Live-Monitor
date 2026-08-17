@@ -196,3 +196,25 @@ def test_local_markdown_links_resolve() -> None:
                 continue
             path = target.split("#", 1)[0]
             assert (source.parent / path).exists(), f"{source}: {target}"
+
+
+def test_interrupt_reconciliation_contract_is_documented_without_old_claims() -> None:
+    manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
+    architecture = Path("docs/architecture.md").read_text(encoding="utf-8")
+    schema = Path("docs/json-schema.md").read_text(encoding="utf-8")
+    combined = "\n".join((manual, architecture, schema))
+
+    for required in (
+        "forced final observation",
+        "final integrity failure",
+        "exit code `9`",
+        "exit code `8`",
+        "stopped and reaped",
+    ):
+        assert required in combined
+    assert (
+        "Ctrl+C closes the display and resources but does not promise a final observation"
+        not in combined
+    )
+    assert "handled Ctrl+C in `watch` or `attach` mode" not in manual
+    assert "Ctrl+C returns `0`" not in combined

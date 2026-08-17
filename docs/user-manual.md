@@ -302,7 +302,10 @@ hf-download-live-monitor watch owner/repository --local-dir ./download --ascii -
 - `--once` renders one observation and exits.
 - `--ascii` affects plain output; `--no-color` affects the interactive renderer.
 
-Press Ctrl+C to stop monitoring. In `watch` mode this stops only the monitor, not a separately started download.
+Press Ctrl+C to cancel monitoring. In `watch` mode this does not stop a separately
+started download, but the monitor still performs a forced final observation,
+verification, and render before returning cancellation exit code `9`, unless a final
+integrity failure takes precedence with exit code `8`.
 
 ## Attach mode
 
@@ -363,7 +366,11 @@ If `hf` is installed under a different executable name or path:
 hf-download-live-monitor run owner/repository --local-dir ./download --hf-executable /path/to/hf
 ```
 
-On the first Ctrl+C, HF Download Live Monitor asks the child downloader to terminate and waits up to five seconds. If shutdown times out or the wait is interrupted again, it kills the child. The final process exit code is propagated to the calling shell.
+On Ctrl+C, HF Download Live Monitor asks the child downloader to terminate and waits
+up to five seconds. If shutdown times out or cleanup is interrupted again, it kills the
+child. After the child is stopped and reaped, the monitor performs its forced final
+observation, verification, and render. Cancellation returns exit code `9` unless a
+final integrity failure takes precedence with exit code `8`.
 
 ## Repository types and file selection
 
@@ -418,7 +425,9 @@ context, and wide terminals can place aggregate and telemetry panels side by sid
 Select the starting density with `--view compact`, `--view balanced`, or
 `--view detailed`. During a run, press `v` to cycle density, `d` for file details,
 `e` for recent events, `?` for help, or `q` for graceful cancellation. Keyboard input
-is optional; monitoring continues if it cannot be initialized.
+is optional; monitoring continues if it cannot be initialized. Dashboard `q` performs
+its final reconciliation before managed runner cleanup; Ctrl+C stops and reaps a
+managed child first, then performs final reconciliation.
 
 Use `--reduced-motion` to disable animation, `--ascii` when Unicode is unsuitable,
 and `--no-color` when color is unavailable. Essential state never depends on color or
@@ -450,10 +459,11 @@ hf-download-live-monitor watch owner/repository --local-dir ./download --jsonl >
 ```
 
 `--jsonl` writes one independent JSON object per observation and is suitable for
-streaming automation. It includes a forced final observation when the managed
-downloader stops or dashboard `q` requests cancellation. A handled Ctrl+C closes the
-display and resources but does not promise a final observation. The current structured
-schema version is `2`; see [Structured output schema](json-schema.md).
+streaming automation. It includes the forced final observation for downloader stop,
+dashboard `q`, and handled Ctrl+C paths. With managed Ctrl+C, the child is stopped and
+reaped before final reconciliation. In `watch` and `attach`, there is no managed child,
+but Ctrl+C still forces the final observation. The current structured schema version
+is `2`; see [Structured output schema](json-schema.md).
 
 The managed downloader started by `run` inherits the terminal's standard streams. Depending on the installed Hugging Face CLI version, its own messages can appear alongside monitor output. For a guaranteed monitor-only JSON file, start the download separately and use `watch --json --once`, `watch --jsonl`, or an attached process whose output remains in its original terminal.
 
@@ -521,8 +531,9 @@ snapshots using schema version 2. It separates requested and resolved
 revisions and distinguishes verified, `complete_unverified`, and failed counts. See
 `docs/json-schema.md` for the exact contract and version 1 migration table.
 
-- `0` means the monitor completed normally, produced a requested one-time observation,
-  or handled Ctrl+C in `watch` or `attach` mode.
+- `0` means the monitor completed normally or produced a requested one-time observation.
+- Ctrl+C and dashboard `q` cancellation return `9` after final reconciliation unless
+  a final integrity failure returns `8` instead.
 - Stable classified failures use the category table above; CLI parser usage errors also use `2`.
 - `run` propagates the official downloader's nonzero exit status after monitoring it.
 - Operating-system launch failures and forced termination can produce platform-specific nonzero values.

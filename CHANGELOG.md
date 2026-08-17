@@ -27,6 +27,8 @@ All notable changes follow Keep a Changelog and semantic versioning.
 - Guarantee downloader termination, escalation, and reaping when monitoring fails or
   is cancelled.
 - Force final filesystem observation and verification after downloader exit.
+- Reconcile and render a final observation on Ctrl+C after managed child cleanup,
+  preserving integrity failure precedence over cancellation.
 - Bound background integrity work and invalidate cached hashes when file identity
   changes.
 

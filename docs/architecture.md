@@ -18,12 +18,17 @@ Lines. Pure layout policy selects narrow, normal, or wide composition.
 ## Lifecycle and fallbacks
 
 `WatchApplication` prepares a plan, observes and renders repeatedly, and polls optional
-controls. It performs a forced final observe/verify/render pass when the managed
-downloader stop condition fires or dashboard `q` requests cancellation. A handled
-KeyboardInterrupt closes the renderer, engine, and controls but does not promise a
-final observation. Controls mutate only `DisplayState`. Terminal setup or key-reading
-failures disable interaction without changing monitoring correctness; plain and
-structured renderers do not initialize controls.
+controls. It performs a forced final observation, verification, and render when the
+managed downloader stop condition fires, dashboard `q` requests cancellation, or it
+handles KeyboardInterrupt. Managed Ctrl+C first invokes runner cleanup so the child is
+stopped and reaped before final reconciliation; `watch` and `attach` have no managed
+child but perform the same final pass. Dashboard `q` performs its final pass before the
+managed runner receives the cancellation result and cleans up the child. A final
+integrity failure returns exit code `8` instead of cancellation exit code `9`.
+Renderer, engine, and controls are then closed.
+Controls mutate only `DisplayState`. Terminal setup or key-reading failures disable
+interaction without changing monitoring correctness; plain and structured renderers
+do not initialize controls.
 
 `processes.py` emits normalized process records from POSIX `/proc` or Windows CIM plus
 `psutil` working-directory resolution. `hf_command.py` accepts documented download
