@@ -67,6 +67,10 @@ class WatchApplication:
         self._controls = controls
         self._display_state = display_state or DisplayState()
 
+    @property
+    def cancellation_requested(self) -> bool:
+        return self._display_state.cancel_requested
+
     def run(
         self,
         spec: DownloadSpec,

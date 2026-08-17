@@ -99,7 +99,7 @@ def test_compact_never_becomes_wide_and_suppresses_detail() -> None:
     assert policy.columns == 1
     assert not policy.show_sparkline
     assert not policy.show_events
-    assert policy.show_preflight
+    assert not policy.show_preflight
     assert not policy.show_completed_files
 
 

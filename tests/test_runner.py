@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
 from hf_download_live_monitor.models import (
     DownloadPlan,
     DownloadSpec,
@@ -71,11 +72,17 @@ class FakeProcess:
 
 
 class FakeApplication:
-    def __init__(self, error: BaseException | None = None, code: int = 0) -> None:
+    def __init__(
+        self,
+        error: BaseException | None = None,
+        code: int = 0,
+        cancellation_requested: bool = False,
+    ) -> None:
         self.error = error
         self.code = code
         self.stop_seen = False
         self.plan: DownloadPlan | None = None
+        self.cancellation_requested = cancellation_requested
 
     def run(self, spec: DownloadSpec, **kwargs: Any) -> int:
         if self.error is not None:
@@ -98,9 +105,12 @@ def test_managed_download_propagates_child_exit_and_stop_condition() -> None:
 def test_managed_download_returns_child_failure_when_monitor_succeeds() -> None:
     process = FakeProcess(code=9)
 
-    assert ManagedDownload(FakeApplication(), process_factory=lambda _: process).run(
-        DownloadSpec("owner/repo", Path("out"))
-    ) == 9
+    assert (
+        ManagedDownload(FakeApplication(), process_factory=lambda _: process).run(
+            DownloadSpec("owner/repo", Path("out"))
+        )
+        == 9
+    )
 
 
 def test_managed_download_forwards_prepared_plan() -> None:
@@ -119,6 +129,68 @@ def test_managed_download_preserves_monitor_failure_code() -> None:
     runner = ManagedDownload(FakeApplication(code=8), process_factory=lambda _: process)
 
     assert runner.run(DownloadSpec("owner/repo", Path("out"))) == 8
+
+
+def test_managed_download_cancellation_terminates_and_reaps_running_child() -> None:
+    process = FakeProcess()
+    process.code = None  # type: ignore[assignment]
+
+    def wait(timeout: float | None = None) -> int:
+        process.wait_timeouts.append(timeout)
+        return 143
+
+    process.wait = wait  # type: ignore[method-assign]
+    cancelled = exit_code_for(ErrorCategory.CANCELLED)
+    result = ManagedDownload(
+        FakeApplication(code=cancelled), process_factory=lambda _: process
+    ).run(DownloadSpec("owner/repo", Path("out")))
+    assert result == cancelled
+    assert process.terminated
+    assert process.wait_timeouts == [5.0]
+
+
+def test_managed_download_cancellation_kills_after_timeout() -> None:
+    process = FakeProcess()
+    process.code = None  # type: ignore[assignment]
+
+    def wait(timeout: float | None = None) -> int:
+        process.wait_timeouts.append(timeout)
+        if timeout is not None:
+            raise subprocess.TimeoutExpired("hf", timeout)
+        return 137
+
+    process.wait = wait  # type: ignore[method-assign]
+    cancelled = exit_code_for(ErrorCategory.CANCELLED)
+    result = ManagedDownload(
+        FakeApplication(code=cancelled), process_factory=lambda _: process
+    ).run(DownloadSpec("owner/repo", Path("out")))
+    assert result == cancelled
+    assert process.terminated and process.killed
+    assert process.wait_timeouts == [5.0, None]
+
+
+def test_managed_download_cancellation_reaps_already_exited_child() -> None:
+    process = FakeProcess(code=0)
+    cancelled = exit_code_for(ErrorCategory.CANCELLED)
+    result = ManagedDownload(
+        FakeApplication(code=cancelled), process_factory=lambda _: process
+    ).run(DownloadSpec("owner/repo", Path("out")))
+    assert result == cancelled
+    assert not process.terminated
+    assert process.wait_timeouts == [None]
+
+
+def test_managed_download_stops_cancelled_child_while_preserving_integrity_code() -> None:
+    process = FakeProcess()
+    process.code = None  # type: ignore[assignment]
+    process.wait = lambda timeout=None: 143  # type: ignore[method-assign]
+    integrity = exit_code_for(ErrorCategory.INTEGRITY)
+    result = ManagedDownload(
+        FakeApplication(code=integrity, cancellation_requested=True),
+        process_factory=lambda _: process,
+    ).run(DownloadSpec("owner/repo", Path("out")))
+    assert result == integrity
+    assert process.terminated
 
 
 @pytest.mark.parametrize(
@@ -155,6 +227,7 @@ def test_stop_and_reap_reaps_already_exited_process_without_terminating() -> Non
 def test_stop_and_reap_kills_after_terminate_timeout() -> None:
     process = FakeProcess(code=0)
     process.code = None  # type: ignore[assignment]
+
     def wait(timeout: float | None = None) -> int:
         process.wait_timeouts.append(timeout)
         if timeout is not None:
@@ -258,9 +331,9 @@ def test_cleanup_failure_does_not_hide_application_failure(failure_point: str) -
     process.wait = wait  # type: ignore[method-assign]
 
     with pytest.raises(RuntimeError, match="renderer leaked") as caught:
-        ManagedDownload(
-            FakeApplication(error=original), process_factory=lambda _: process
-        ).run(DownloadSpec("owner/repo", Path("out")))
+        ManagedDownload(FakeApplication(error=original), process_factory=lambda _: process).run(
+            DownloadSpec("owner/repo", Path("out"))
+        )
 
     notes = getattr(caught.value, "__notes__", None)
     cleanup_diagnostic = notes or [str(caught.value.__context__)]
@@ -281,9 +354,7 @@ def test_managed_download_process_creation_failure_propagates() -> None:
 def test_managed_download_uses_resolved_plan_spec_for_child_command() -> None:
     commands: list[tuple[str, ...]] = []
     requested = DownloadSpec("owner/repo", Path("out"), revision="main", includes=("*.bin",))
-    resolved = DownloadSpec(
-        "owner/repo", Path("out"), revision="a" * 40, includes=("*.bin",)
-    )
+    resolved = DownloadSpec("owner/repo", Path("out"), revision="a" * 40, includes=("*.bin",))
     plan = DownloadPlan(resolved, "main", (ManifestFile("model.bin", 1),))
 
     ManagedDownload(

@@ -8,9 +8,11 @@ from dataclasses import asdict
 from typing import Any, Protocol, TextIO
 
 from rich import box
+from rich.columns import Columns
 from rich.console import Console, Group, RenderableType
 from rich.live import Live
 from rich.panel import Panel
+from rich.progress_bar import ProgressBar
 from rich.table import Table
 from rich.text import Text
 
@@ -143,11 +145,14 @@ class RichRenderer:
             self._state.show_events,
         )
         dashboard = _dashboard(snapshot, policy, self._state, self._ascii_only)
-        if not self._console.is_terminal or self._reduced_motion:
+        if not self._console.is_terminal:
             self._console.print(dashboard)
         elif self._live is None:
-            self._live = Live(dashboard, console=self._console, refresh_per_second=4)
-            self._live.start()
+            if policy.animate:
+                self._live = Live(dashboard, console=self._console, refresh_per_second=4)
+            else:
+                self._live = Live(dashboard, console=self._console, auto_refresh=False)
+            self._live.start(refresh=True)
         else:
             self._live.update(dashboard, refresh=True)
 
@@ -160,12 +165,19 @@ class RichRenderer:
 def _dashboard(
     snapshot: ProgressSnapshot, policy: LayoutPolicy, state: DisplayState, ascii_only: bool
 ) -> Group:
-    parts: list[RenderableType] = [
-        _header_panel(snapshot, ascii_only),
-        _aggregate_panel(snapshot, policy, ascii_only),
-        _attention_table(snapshot, policy, ascii_only),
-        _preflight_panel(snapshot, ascii_only),
-    ]
+    aggregate = _aggregate_panel(snapshot, policy, ascii_only)
+    attention = _attention_table(snapshot, policy, ascii_only)
+    preflight = _preflight_panel(snapshot, ascii_only)
+    parts: list[RenderableType] = [_header_panel(snapshot, ascii_only)]
+    if policy.columns == 2:
+        summary: list[RenderableType] = [aggregate]
+        if policy.show_preflight:
+            summary.append(preflight)
+        parts.extend((Columns(summary, expand=True, equal=True), attention))
+    else:
+        parts.extend((aggregate, attention))
+        if policy.show_preflight:
+            parts.append(preflight)
     if policy.show_events:
         parts.append(_events_panel(snapshot, ascii_only))
     if state.show_help:
@@ -179,7 +191,25 @@ def _panel(content: RenderableType, title: str, ascii_only: bool) -> Panel:
 
 
 def _header_panel(snapshot: ProgressSnapshot, ascii_only: bool) -> Panel:
-    status = "VERIFIED" if snapshot.failed_files == 0 and snapshot.verified_files else "MONITORING"
+    states = tuple(item.state for item in snapshot.files)
+    terminal = {
+        FileState.VERIFIED,
+        FileState.COMPLETE_UNVERIFIED,
+        FileState.COMPLETE,
+        FileState.SIZE_MATCHED,
+    }
+    if snapshot.failed_files or FileState.FAILED in states:
+        status = "FAILED"
+    elif states and all(state is FileState.VERIFIED for state in states):
+        status = "VERIFIED"
+    elif (
+        states
+        and all(state in terminal for state in states)
+        and FileState.COMPLETE_UNVERIFIED in states
+    ):
+        status = "COMPLETE / UNVERIFIED"
+    else:
+        status = "MONITORING"
     return _panel(
         Text(
             f"{snapshot.spec.repo}  {snapshot.requested_revision} -> "
@@ -198,20 +228,22 @@ def _aggregate_panel(snapshot: ProgressSnapshot, policy: LayoutPolicy, ascii_onl
     )
     eta = "-" if snapshot.eta_seconds is None else f"{snapshot.eta_seconds:.1f}s"
     percent = _percent(snapshot.downloaded_bytes, snapshot.expected_bytes)
+    speed_label = "Spd" if policy.abbreviate_labels else "Speed"
     text = (
         f"{percent:.2f}%  {human_bytes(snapshot.downloaded_bytes)} / "
-        f"{human_bytes(snapshot.expected_bytes)}  speed {speed}  ETA {eta}"
+        f"{human_bytes(snapshot.expected_bytes)}  {speed_label} {speed}  ETA {eta}"
     )
     if policy.show_sparkline and snapshot.rate_history:
         text += "\nrate " + _sparkline(snapshot.rate_history[-24:], ascii_only)
-    return _panel(Text(text), "Progress", ascii_only)
+    progress = ProgressBar(total=100.0, completed=percent, width=None)
+    return _panel(Group(Text(text), progress), "Progress", ascii_only)
 
 
 def _attention_table(snapshot: ProgressSnapshot, policy: LayoutPolicy, ascii_only: bool) -> Table:
     table = Table(title="Attention files", expand=True, box=box.ASCII if ascii_only else box.SIMPLE)
     table.add_column("File", overflow="fold")
     table.add_column("Done", justify="right")
-    table.add_column("State")
+    table.add_column("State", overflow="fold")
     completed = {
         FileState.COMPLETE,
         FileState.VERIFIED,

@@ -7,7 +7,7 @@ import sys
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from typing import TextIO
+from typing import Any, Protocol, TextIO
 
 from hf_download_live_monitor.layout import ViewMode
 
@@ -85,21 +85,42 @@ def _platform_reader(stream: TextIO) -> tuple[Callable[[], str | None], Callable
     if os.name == "nt":
         import msvcrt
 
-        return (lambda: msvcrt.getwch() if msvcrt.kbhit() else None), lambda: None
+        return _windows_reader(msvcrt)
 
     import select
     import termios
     import tty
 
+    return _posix_reader(stream, select, termios, tty)
+
+
+class _WindowsConsole(Protocol):
+    def kbhit(self) -> bool: ...
+
+    def getwch(self) -> str: ...
+
+
+def _windows_reader(
+    console: _WindowsConsole,
+) -> tuple[Callable[[], str | None], Callable[[], None]]:
+    return (lambda: console.getwch() if console.kbhit() else None), lambda: None
+
+
+def _posix_reader(
+    stream: TextIO,
+    select_module: Any,
+    termios_module: Any,
+    tty_module: Any,
+) -> tuple[Callable[[], str | None], Callable[[], None]]:
     descriptor = stream.fileno()
-    previous = termios.tcgetattr(descriptor)
-    tty.setcbreak(descriptor)
+    previous = termios_module.tcgetattr(descriptor)
+    tty_module.setcbreak(descriptor)
 
     def read() -> str | None:
-        ready, _, _ = select.select([stream], [], [], 0)
+        ready, _, _ = select_module.select([stream], [], [], 0)
         return stream.read(1) if ready else None
 
     def close() -> None:
-        termios.tcsetattr(descriptor, termios.TCSADRAIN, previous)
+        termios_module.tcsetattr(descriptor, termios_module.TCSADRAIN, previous)
 
     return read, close

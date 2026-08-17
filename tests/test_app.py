@@ -283,6 +283,7 @@ def test_q_reconciles_final_snapshot_then_returns_cancelled_and_closes_controls(
     )
     assert len(renderer.snapshots) == 2
     assert controls.closed
+    assert app.cancellation_requested
 
 
 def test_q_integrity_failure_takes_precedence_over_cancelled(tmp_path: Path) -> None:

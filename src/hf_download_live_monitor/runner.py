@@ -6,6 +6,7 @@ import subprocess
 from collections.abc import Callable
 from typing import Protocol
 
+from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
 from hf_download_live_monitor.models import DownloadPlan, DownloadSpec, ManifestFile, RepoType
 
 
@@ -79,6 +80,12 @@ class ManagedDownload:
                 stop_when=lambda: process.poll() is not None,
                 handle_interrupt=False,
             )
+            cancellation_requested = monitor_code == exit_code_for(ErrorCategory.CANCELLED) or bool(
+                getattr(self._application, "cancellation_requested", False)
+            )
+            if cancellation_requested:
+                _stop_and_reap(process)
+                return monitor_code
             child_code = process.wait()
             return monitor_code or child_code
         except BaseException as error:

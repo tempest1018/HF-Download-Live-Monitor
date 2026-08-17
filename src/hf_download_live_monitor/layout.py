@@ -89,7 +89,7 @@ def layout_policy(
         columns=2 if layout_class is LayoutClass.WIDE else 1,
         show_sparkline=not compact and not narrow,
         show_events=not compact and (detailed or show_events),
-        show_preflight=True,
+        show_preflight=not compact,
         show_completed_files=not compact and (detailed or show_details),
         abbreviate_labels=narrow,
         animate=not reduced_motion,

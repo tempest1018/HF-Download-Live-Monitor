@@ -62,3 +62,67 @@ def test_controller_initialization_and_close_errors_never_escape(monkeypatch) ->
         close_reader=lambda: (_ for _ in ()).throw(RuntimeError("close failed")),
     )
     controller.close()
+
+
+def test_windows_reader_uses_kbhit_before_getwch() -> None:
+    calls: list[str] = []
+
+    class Msvcrt:
+        def kbhit(self) -> bool:
+            calls.append("kbhit")
+            return len(calls) > 1
+
+        def getwch(self) -> str:
+            calls.append("getwch")
+            return "q"
+
+    read, close = controls_module._windows_reader(Msvcrt())
+    assert read() is None
+    assert read() == "q"
+    close()
+    assert calls == ["kbhit", "kbhit", "getwch"]
+
+
+def test_posix_reader_sets_cbreak_and_restores_exact_settings_after_poll_error() -> None:
+    previous = [1, 2, [3]]
+    calls: list[object] = []
+
+    class Stream:
+        def isatty(self) -> bool:
+            return True
+
+        def fileno(self) -> int:
+            return 7
+
+        def read(self, count: int) -> str:
+            return "q"
+
+    class Termios:
+        TCSADRAIN = 9
+
+        def tcgetattr(self, descriptor: int):
+            calls.append(("get", descriptor))
+            return previous
+
+        def tcsetattr(self, descriptor: int, when: int, settings) -> None:
+            calls.append(("restore", descriptor, when, settings))
+
+    class Tty:
+        def setcbreak(self, descriptor: int) -> None:
+            calls.append(("cbreak", descriptor))
+
+    class Select:
+        def select(self, *args):
+            raise OSError("poll failed")
+
+    stream = Stream()
+    read, close = controls_module._posix_reader(stream, Select(), Termios(), Tty())
+    controller = KeyboardController(read_key=read, close_reader=close)
+    state = DisplayState()
+    assert controller.poll(state) == state
+    controller.close()
+    assert calls == [
+        ("get", 7),
+        ("cbreak", 7),
+        ("restore", 7, 9, previous),
+    ]
