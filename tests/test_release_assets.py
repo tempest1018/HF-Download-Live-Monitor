@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,6 +11,18 @@ import pytest
 import yaml
 
 from scripts import build_standalone
+
+
+def _command(name: str, git_subdirectory: str) -> str | None:
+    discovered = shutil.which(name)
+    bundled = Path("C:/Program Files/Git") / git_subdirectory / f"{name}.exe"
+    if discovered is not None:
+        return discovered
+    return str(bundled) if bundled.is_file() else None
+
+
+_BASH = _command("bash", "bin")
+_SHA256SUM = _command("sha256sum", "usr/bin")
 
 
 def test_artifact_naming_can_be_imported_without_pyinstaller(
@@ -133,21 +147,38 @@ def _workflow(name: str) -> dict[str, object]:
     return loaded
 
 
+def _workflow_triggers(workflow: dict[str, object]) -> dict[str, object]:
+    # PyYAML implements YAML 1.1, where the unquoted GitHub key `on` resolves to True.
+    assert True in workflow
+    triggers = workflow[True]
+    assert isinstance(triggers, dict)
+    return triggers
+
+
 def test_ci_keeps_x64_matrix_and_adds_native_arm64_validation() -> None:
-    jobs = _workflow("ci")["jobs"]
+    workflow = _workflow("ci")
+    assert set(_workflow_triggers(workflow)) == {"push", "pull_request", "workflow_dispatch"}
+    jobs = workflow["jobs"]
     assert isinstance(jobs, dict)
     assert jobs["test"]["strategy"]["matrix"] == {
         "os": ["ubuntu-latest", "windows-latest"],
         "python": ["3.10", "3.11", "3.12", "3.13"],
     }
-    arm_job = jobs["arm64-native"]
-    assert arm_job["strategy"]["fail-fast"] is False
-    assert arm_job["strategy"]["matrix"]["include"] == [
-        {"runner": "ubuntu-24.04-arm", "os": "linux", "arch": "arm64"},
+    linux_arm_job = jobs["linux-arm64"]
+    assert linux_arm_job["runs-on"] == "ubuntu-24.04-arm"
+    assert "if" not in linux_arm_job
+    expensive_arm_job = jobs["windows-macos-arm64"]
+    assert expensive_arm_job["strategy"]["fail-fast"] is False
+    assert expensive_arm_job["strategy"]["matrix"]["include"] == [
         {"runner": "windows-11-arm", "os": "windows", "arch": "arm64"},
         {"runner": "macos-15", "os": "macos", "arch": "arm64"},
     ]
-    assert arm_job["runs-on"] == "${{ matrix.runner }}"
+    assert expensive_arm_job["runs-on"] == "${{ matrix.runner }}"
+    condition = expensive_arm_job["if"]
+    assert "github.event_name == 'push'" in condition
+    assert "github.ref == 'refs/heads/main'" in condition
+    assert "github.event_name == 'workflow_dispatch'" in condition
+    assert jobs["package"]["needs"] == ["quality", "test", "macos-smoke", "linux-arm64"]
     rendered = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "normalized_architecture(platform.machine()) == 'arm64'" in rendered
     assert 'python-version: "3.13"' in rendered
@@ -213,6 +244,57 @@ def test_release_workflow_has_exact_native_standalone_matrix_and_unique_assets()
     assert "python-distributions" in rendered
     assert "merge-multiple: true" in rendered
     assert "pypa/gh-action-pypi-publish@release/v1" in rendered
+
+
+def test_release_validation_gates_both_publishers_and_builds_relative_checksums() -> None:
+    jobs = _workflow("release")["jobs"]
+    assert isinstance(jobs, dict)
+    validation = jobs["validate-release-assets"]
+    assert validation["needs"] == ["verify-and-build-python", "standalone"]
+    gate = ["verify-and-build-python", "standalone", "validate-release-assets"]
+    assert jobs["publish-pypi"]["needs"] == gate
+    assert jobs["github-release"]["needs"] == gate
+    rendered = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert "cd release-assets" in rendered
+    assert "find . -type f" in rendered
+    assert "! -name '*.sha256'" in rendered
+    assert "! -name 'SHA256SUMS'" in rendered
+    assert "sha256sum -c" in rendered
+    for name in [
+        "hf-download-live-monitor-windows-x86_64.exe",
+        "hf-download-live-monitor-windows-arm64.exe",
+        "hf-download-live-monitor-linux-x86_64",
+        "hf-download-live-monitor-linux-arm64",
+        "hf-download-live-monitor-macos-x86_64",
+        "hf-download-live-monitor-macos-arm64",
+    ]:
+        assert name in rendered
+    assert "dist/*.whl" in rendered
+    assert "dist/*.tar.gz" in rendered
+
+
+@pytest.mark.skipif(_BASH is None or _SHA256SUM is None, reason="bash or sha256sum is unavailable")
+def test_relative_aggregate_checksum_is_verifiable_when_assets_are_colocated(
+    tmp_path: Path,
+) -> None:
+    assets = tmp_path / "release-assets"
+    assets.mkdir()
+    (assets / "program").write_bytes(b"executable")
+    (assets / "program.sha256").write_text("per-file checksum", encoding="ascii")
+    subprocess.run(
+        [
+            _BASH,
+            "-c",
+            "cd release-assets && "
+            "find . -type f ! -name '*.sha256' ! -name 'SHA256SUMS' -print0 | "
+            "sort -z | xargs -0 sha256sum > SHA256SUMS && sha256sum -c SHA256SUMS",
+        ],
+        cwd=tmp_path,
+        check=True,
+    )
+    checksum = (assets / "SHA256SUMS").read_text(encoding="ascii")
+    assert "release-assets" not in checksum
+    assert "program.sha256" not in checksum
 
 
 def test_standalone_spec_and_builder_have_no_local_paths() -> None:
