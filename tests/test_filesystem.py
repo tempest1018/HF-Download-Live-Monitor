@@ -52,3 +52,19 @@ def test_observe_uses_newest_incomplete_candidate(tmp_path: Path) -> None:
     )
     assert observed[0].partial_bytes == 4
     assert observed[0].visible_bytes == 4
+
+
+def test_observe_records_final_file_identity_only(tmp_path: Path) -> None:
+    final = tmp_path / "final.bin"
+    final.write_bytes(b"abc")
+    make_partial(tmp_path, "partial.bin", "one", b"x")
+    observed = FileSystemObserver().observe(
+        DownloadSpec("owner/repo", tmp_path),
+        (ManifestFile("final.bin", 3), ManifestFile("partial.bin", 2)),
+        now=3.0,
+    )
+    stat = final.stat()
+    assert observed[0].identity is not None
+    assert observed[0].identity.size == stat.st_size
+    assert observed[0].identity.modified_ns == stat.st_mtime_ns
+    assert observed[1].identity is None

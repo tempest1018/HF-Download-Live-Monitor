@@ -1,0 +1,21 @@
+FROM python:3.13-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a
+WORKDIR /app
+COPY pyproject.toml README.md LICENSE ./
+# Dependency ranges mirror pyproject.toml; keep that file as the source of truth.
+RUN python -m pip install --no-cache-dir \
+    "hatchling>=1.27,<1.31" \
+    "huggingface-hub>=0.27,<2" \
+    "psutil>=6,<8" \
+    "rich>=13.9,<15" \
+    "typer>=0.15,<0.27" \
+    "build>=1.2,<2" \
+    "pyright>=1.1,<2" \
+    "pytest>=8,<9" \
+    "ruff>=0.9,<1" \
+    "twine>=6,<7"
+COPY src/ src/
+RUN python -m pip install --no-cache-dir --no-deps -e .
+COPY tests/fixtures/ tests/fixtures/
+COPY tests/integration/ tests/integration/
+COPY scripts/run_container_simulation.py scripts/run_container_simulation.py
+CMD ["python", "scripts/run_container_simulation.py", "--repeat", "4"]

@@ -11,9 +11,13 @@ from rich.console import Console
 
 from hf_download_live_monitor.app import WatchApplication
 from hf_download_live_monitor.attach import discover_downloads, select_download
+from hf_download_live_monitor.controls import DisplayState, KeyboardController
 from hf_download_live_monitor.engine import ProgressEngine
+from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
 from hf_download_live_monitor.filesystem import FileSystemObserver
+from hf_download_live_monitor.layout import ViewMode
 from hf_download_live_monitor.models import DownloadSpec, MonitorError, RepoType
+from hf_download_live_monitor.preflight import validate_destination
 from hf_download_live_monitor.processes import system_process_provider
 from hf_download_live_monitor.renderers import (
     JsonLinesRenderer,
@@ -23,6 +27,7 @@ from hf_download_live_monitor.renderers import (
 )
 from hf_download_live_monitor.repository import HubRepository
 from hf_download_live_monitor.runner import ManagedDownload
+from hf_download_live_monitor.security import redact_text
 
 cli = typer.Typer(no_args_is_help=True, help="Monitor Hugging Face downloads.")
 
@@ -44,6 +49,8 @@ def attach(
     jsonl: bool = typer.Option(False, "--jsonl"),
     no_color: bool = typer.Option(False, "--no-color"),
     ascii_only: bool = typer.Option(False, "--ascii"),
+    view: ViewMode = typer.Option(ViewMode.BALANCED, "--view"),
+    reduced_motion: bool = typer.Option(False, "--reduced-motion"),
 ) -> None:
     """Attach to an active Hugging Face download."""
     if pid is not None and all_downloads:
@@ -71,6 +78,8 @@ def attach(
                 jsonl=jsonl,
                 no_color=no_color,
                 ascii_only=ascii_only,
+                view=view,
+                reduced_motion=reduced_motion,
             )
             if code:
                 raise typer.Exit(code=code)
@@ -94,34 +103,46 @@ def run_download(
     jsonl: bool = typer.Option(False, "--jsonl"),
     no_color: bool = typer.Option(False, "--no-color"),
     ascii_only: bool = typer.Option(False, "--ascii"),
+    view: ViewMode = typer.Option(ViewMode.BALANCED, "--view"),
+    reduced_motion: bool = typer.Option(False, "--reduced-motion"),
     hf_executable: str = typer.Option("hf", "--hf-executable"),
 ) -> None:
     """Launch and monitor an official Hugging Face download."""
     _validate_outputs(plain, json_output, jsonl)
     spec = DownloadSpec(
         repo=repo,
-        local_dir=local_dir.resolve(),
+        local_dir=local_dir,
         repo_type=repo_type,
         revision=revision,
         filenames=tuple(filename or ()),
         includes=tuple(include or ()),
         excludes=tuple(exclude or ()),
     )
-    application = _make_application(
-        refresh=refresh,
-        rate_window=rate_window,
-        plain=plain,
-        json_output=json_output,
-        jsonl=jsonl,
-        no_color=no_color,
-        ascii_only=ascii_only,
-    )
     try:
-        code = ManagedDownload(application).run(spec, executable=hf_executable)
+        plan = HubRepository().prepare(spec)
+        validate_destination(plan)
+        application = _make_application(
+            refresh=refresh,
+            rate_window=rate_window,
+            plain=plain,
+            json_output=json_output,
+            jsonl=jsonl,
+            no_color=no_color,
+            ascii_only=ascii_only,
+            view=view,
+            reduced_motion=reduced_motion,
+        )
+        code = ManagedDownload(application).run(plan.spec, executable=hf_executable, plan=plan)
     except MonitorError as exc:
         _exit_for_error(exc)
     except OSError as exc:
-        _exit_for_error(MonitorError("launch_failed", str(exc)))
+        _exit_for_error(
+            MonitorError(
+                "launch_failed",
+                redact_text(str(exc)),
+                category=ErrorCategory.DOWNLOADER,
+            )
+        )
     if code:
         raise typer.Exit(code=code)
 
@@ -143,6 +164,8 @@ def watch(
     jsonl: bool = typer.Option(False, "--jsonl"),
     no_color: bool = typer.Option(False, "--no-color"),
     ascii_only: bool = typer.Option(False, "--ascii"),
+    view: ViewMode = typer.Option(ViewMode.BALANCED, "--view"),
+    reduced_motion: bool = typer.Option(False, "--reduced-motion"),
 ) -> None:
     """Watch an explicit Hugging Face local directory."""
     _validate_outputs(plain, json_output, jsonl)
@@ -167,6 +190,8 @@ def watch(
             jsonl=jsonl,
             no_color=no_color,
             ascii_only=ascii_only,
+            view=view,
+            reduced_motion=reduced_motion,
         )
     except MonitorError as exc:
         _exit_for_error(exc)
@@ -190,6 +215,8 @@ def _watch_spec(
     jsonl: bool,
     no_color: bool,
     ascii_only: bool,
+    view: ViewMode,
+    reduced_motion: bool,
 ) -> int:
     application = _make_application(
         refresh=refresh,
@@ -199,6 +226,8 @@ def _watch_spec(
         jsonl=jsonl,
         no_color=no_color,
         ascii_only=ascii_only,
+        view=view,
+        reduced_motion=reduced_motion,
     )
     return application.run(spec, once=once)
 
@@ -212,6 +241,8 @@ def _make_application(
     jsonl: bool,
     no_color: bool,
     ascii_only: bool,
+    view: ViewMode,
+    reduced_motion: bool,
 ) -> WatchApplication:
     if json_output:
         renderer = JsonRenderer()
@@ -220,19 +251,27 @@ def _make_application(
     elif plain or not sys.stdout.isatty():
         renderer = PlainRenderer(ascii_only=ascii_only)
     else:
-        renderer = RichRenderer(Console(no_color=no_color))
+        renderer = RichRenderer(
+            Console(no_color=no_color),
+            view_mode=view,
+            ascii_only=ascii_only,
+            reduced_motion=reduced_motion,
+        )
+    controls = KeyboardController() if isinstance(renderer, RichRenderer) else None
     return WatchApplication(
         repository=HubRepository(),
         observer=FileSystemObserver(),
         engine=ProgressEngine(rate_window=rate_window),
         renderer=renderer,
         refresh=refresh,
+        controls=controls,
+        display_state=DisplayState(view_mode=view),
     )
 
 
 def _exit_for_error(exc: MonitorError) -> NoReturn:
     typer.echo(f"Error [{exc.code}]: {exc.message}", err=True)
-    raise typer.Exit(code=2) from exc
+    raise typer.Exit(code=exit_code_for(exc.category)) from exc
 
 
 def run() -> None:

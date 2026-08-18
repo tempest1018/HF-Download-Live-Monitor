@@ -81,6 +81,12 @@ On Windows, `py --version` may work when `python --version` does not.
 
 ### Standalone executable
 
+Tagged releases use architecture-labelled filenames for Windows, Linux, and macOS on
+both x86-64 and ARM64. Download the matching `.sha256` file and verify it before
+running the executable. If a standalone build is unavailable, install the portable
+Python wheel instead. Native ARM64 jobs are configured to validate ARM64 release
+assets; an x86-64 executable is never relabelled as ARM64.
+
 The standalone executable does not require a separate Python installation for `watch` or `attach`. `run` still launches the official external `hf` command, so install the Hugging Face CLI separately or pass its path with `--hf-executable`. Download standalone HF Download Live Monitor files only from this project's GitHub Releases page and verify their checksums before running them.
 
 ### Hugging Face access
@@ -163,32 +169,43 @@ The command remains available only while that environment is active unless you i
 
 ### Option D: standalone executable
 
-1. Open the project's GitHub Releases page.
-2. Download the executable for your operating system and `SHA256SUMS` or the adjacent `.sha256` file.
+1. Open the project's GitHub Releases page. The workflow is configured for the files
+   below, but only assets actually attached to a completed release are available.
+2. Download the executable for your operating system and architecture plus its
+   adjacent `.sha256` file.
 3. Verify the download.
+
+| Operating system | x86-64 artifact | ARM64 artifact |
+| --- | --- | --- |
+| Windows | `hf-download-live-monitor-windows-x86_64.exe` | `hf-download-live-monitor-windows-arm64.exe` |
+| Linux | `hf-download-live-monitor-linux-x86_64` | `hf-download-live-monitor-linux-arm64` |
+| macOS | `hf-download-live-monitor-macos-x86_64` | `hf-download-live-monitor-macos-arm64` |
 
 Windows PowerShell:
 
 ```powershell
-Get-FileHash .\hf-download-live-monitor.exe -Algorithm SHA256
-Get-Content .\hf-download-live-monitor.exe.sha256
+Get-FileHash .\hf-download-live-monitor-windows-arm64.exe -Algorithm SHA256
+Get-Content .\hf-download-live-monitor-windows-arm64.exe.sha256
 ```
 
 The two hexadecimal digests must match exactly. Then run:
 
 ```powershell
-.\hf-download-live-monitor.exe --help
+.\hf-download-live-monitor-windows-arm64.exe --help
 ```
 
 Linux or macOS:
 
 ```bash
-sha256sum -c hf-download-live-monitor.sha256
-chmod +x hf-download-live-monitor
-./hf-download-live-monitor --help
+sha256sum -c hf-download-live-monitor-linux-arm64.sha256
+chmod +x hf-download-live-monitor-linux-arm64
+./hf-download-live-monitor-linux-arm64 --help
 ```
 
-On macOS, use `shasum -a 256 hf-download-live-monitor` if `sha256sum` is unavailable. Do not bypass operating-system security warnings for an artifact whose checksum or source you cannot verify.
+On macOS, compare `shasum -a 256 hf-download-live-monitor-macos-arm64` with the
+adjacent checksum if `sha256sum` is unavailable. Substitute the exact table entry for
+your platform. Do not bypass operating-system security warnings for an artifact whose
+checksum or source you cannot verify.
 
 ### Development installation
 
@@ -212,7 +229,8 @@ hf-download-live-monitor attach --help
 hf-download-live-monitor run --help
 ```
 
-For a standalone file, replace `hf-download-live-monitor` with `./hf-download-live-monitor` or `.\hf-download-live-monitor.exe`.
+For a standalone file, replace `hf-download-live-monitor` with the exact downloaded
+artifact name from the installation table.
 
 Expected result: all four commands print help and exit without a traceback. Also verify the official Hugging Face CLI when you intend to use `run`:
 
@@ -284,11 +302,15 @@ hf-download-live-monitor watch owner/repository --local-dir ./download --ascii -
 - `--once` renders one observation and exits.
 - `--ascii` affects plain output; `--no-color` affects the interactive renderer.
 
-Press Ctrl+C to stop monitoring. In `watch` mode this stops only the monitor, not a separately started download.
+Press Ctrl+C to cancel monitoring. In `watch` mode this does not stop a separately
+started download, but the monitor still performs a forced final observation,
+verification, and render before returning cancellation exit code `9`, unless a final
+integrity failure takes precedence with exit code `8`.
 
 ## Attach mode
 
-`attach` discovers supported `hf download` processes that include `--local-dir`.
+`attach` discovers supported `hf download` processes that include the official
+downloader's local-directory option.
 
 ```console
 hf-download-live-monitor attach
@@ -315,7 +337,9 @@ Attachment support:
 - macOS: automatic attachment is not supported because `/proc` is unavailable; use `watch` or `run`.
 - Restricted containers or accounts may not permit inspection of other processes; use `watch` or `run`.
 
-Relative `--local-dir` values are resolved against the downloader process's working directory. Token options are discarded by the parser and are not retained in the normalized download specification.
+Relative local-directory values from the discovered downloader are resolved against
+that process's working directory. Token options are discarded by the parser and are
+not retained in the normalized download specification.
 
 ## Run mode
 
@@ -342,7 +366,15 @@ If `hf` is installed under a different executable name or path:
 hf-download-live-monitor run owner/repository --local-dir ./download --hf-executable /path/to/hf
 ```
 
-On the first Ctrl+C, HF Download Live Monitor asks the child downloader to terminate and waits up to five seconds. If shutdown times out or the wait is interrupted again, it kills the child. The final process exit code is propagated to the calling shell.
+On Ctrl+C, HF Download Live Monitor attempts to stop and reap the child downloader: it
+asks the child to terminate and waits up to five seconds, then kills it if shutdown
+times out or cleanup is interrupted again. The monitor performs its forced final
+observation, verification, and render after that cleanup attempt. When cleanup succeeds,
+the child is stopped and reaped, and cancellation returns exit code `9` unless a final
+integrity failure takes precedence with exit code `8`. If cleanup fails, including a
+second interrupt during cleanup, child reaping is not confirmed; final reconciliation
+still runs, then the cleanup failure takes precedence and returns downloader exit code
+`6`.
 
 ## Repository types and file selection
 
@@ -388,6 +420,23 @@ Only one of `--plain`, `--json`, or `--jsonl` may be selected.
 
 ### Interactive display
 
+The default interactive interface is **Adaptive Focus**. It emphasizes repository
+identity, immutable revision, total progress, transfer rate, ETA, integrity status,
+and files that need attention. It recalculates its layout on every refresh: narrow
+terminals use one concise column, normal terminals add throughput and preflight
+context, and wide terminals can place aggregate and telemetry panels side by side.
+
+Select the starting density with `--view compact`, `--view balanced`, or
+`--view detailed`. During a run, press `v` to cycle density, `d` for file details,
+`e` for recent events, `?` for help, or `q` for graceful cancellation. Keyboard input
+is optional; monitoring continues if it cannot be initialized. Dashboard `q` performs
+its final reconciliation before managed runner cleanup; Ctrl+C first attempts to stop
+and reap a managed child, then performs final reconciliation.
+
+Use `--reduced-motion` to disable animation, `--ascii` when Unicode is unsuitable,
+and `--no-color` when color is unavailable. Essential state never depends on color or
+motion alone.
+
 The default on a terminal is a live Rich table. It shows file progress, state, speed, and aggregate totals.
 
 ### Plain text
@@ -404,7 +453,8 @@ Plain text contains no cursor-control sequences and is selected automatically wh
 hf-download-live-monitor watch owner/repository --local-dir ./download --json --once > status.json
 ```
 
-`--json` writes one JSON document per render. It is best paired with `--once`.
+`--json` writes one document for its first render. With `--once`, that first render is
+a final one-shot observation.
 
 ### JSON Lines
 
@@ -412,7 +462,16 @@ hf-download-live-monitor watch owner/repository --local-dir ./download --json --
 hf-download-live-monitor watch owner/repository --local-dir ./download --jsonl > progress.jsonl
 ```
 
-`--jsonl` writes one independent JSON object per line and is suitable for streaming automation. The current structured schema version is `1`; see [Structured output schema](json-schema.md).
+`--jsonl` writes one independent JSON object per observation and is suitable for
+streaming automation. It includes the forced final observation for downloader stop,
+dashboard `q`, and handled Ctrl+C paths. Managed Ctrl+C attempts to stop and reap the
+child before final reconciliation; the child is confirmed stopped and reaped only when
+cleanup succeeds. If cleanup fails or receives a second interrupt, child reaping is not
+confirmed. That failure is retained while the final JSONL observation is produced,
+then takes precedence as downloader exit code `6`. In `watch` and `attach`, there is no
+managed child or child-cleanup failure path, but Ctrl+C still forces the final
+observation. The current structured schema version is `2`; see [Structured output
+schema](json-schema.md).
 
 The managed downloader started by `run` inherits the terminal's standard streams. Depending on the installed Hugging Face CLI version, its own messages can appear alongside monitor output. For a guaranteed monitor-only JSON file, start the download separately and use `watch --json --once`, `watch --jsonl`, or an attached process whose output remains in its original terminal.
 
@@ -425,11 +484,69 @@ Common file states:
 - `finalizing`: expected bytes exist in a partial file pending finalization.
 - `complete`: final size exactly matches repository metadata.
 - `inconsistent`: final size does not match repository metadata.
+- `size_matched`: the final size matches and integrity classification is pending.
+- `verifying`: SHA-256 verification is in progress.
+- `verified`: the supported digest matches; this is the only cryptographically verified state.
+- `complete_unverified`: size is complete but no supported digest is available.
+- `failed`: final reconciliation or verification found a definitive failure.
 
 ## Exit status
 
-- `0` means the monitor completed normally, produced a requested one-time observation, or was stopped cleanly in `watch` or `attach` mode.
-- `2` is used for invalid CLI usage and classified monitor errors such as a missing repository or unsupported selection.
+Success is `0`. Errors use this stable mapping:
+
+| Category | Exit code | Meaning |
+| --- | --- | --- |
+| `usage` | 2 | Invalid invocation or incompatible options. |
+| `access` | 3 | Authentication, gating, or authorization failure. |
+| `repository` | 4 | Repository, revision, selection, or metadata failure. |
+| `destination` | 5 | Unsafe, unwritable, or insufficient-capacity destination. |
+| `downloader` | 6 | Official downloader launch or managed cleanup failure. |
+| `monitor` | 7 | Monitor or process-discovery failure. |
+| `integrity` | 8 | Final reconciliation or integrity failure. |
+| `cancelled` | 9 | Cancellation without a higher-priority integrity failure. |
+
+## Preflight, revisions, and integrity
+
+Managed runs finish all mandatory checks before creating the downloader process. HF
+Download Live Monitor verifies authentication and gated access, resolves a branch or
+tag to a full immutable commit SHA, retrieves a usable manifest, creates and tests the
+destination, and checks disk space with conservative overhead and a safety margin.
+
+The disk formula is `required = remaining_bytes + ceil(remaining_bytes * 0.10)`.
+A local final is subtracted from `remaining_bytes` only when its size and local Hub
+metadata match the resolved revision or, if metadata is absent, its size and supported
+SHA-256 match. Unknown, stale, or unreadable metadata is treated conservatively as
+needing download.
+
+File states distinguish byte completion from cryptographic verification:
+
+- `queued`, `measuring`, and `downloading`: content is absent or still growing.
+- `size_matched` and `verifying`: expected bytes exist and hashing is pending.
+- `verified`: size and the expected SHA-256 digest both match.
+- `complete_unverified`: size matches, but no supported digest was supplied.
+- `failed`: size or digest is inconsistent with repository metadata.
+
+Only `verified` means cryptographically verified. `size_matched`, `complete`, and
+`complete_unverified` must never be called verified. After child exit, the monitor forces
+a final observation and completes eligible verification; a successful downloader
+exit cannot hide missing or corrupt output.
+
+## Automation and schema compatibility
+
+`--plain` is intended for readable logs. `--json` emits the first snapshot (use
+`--once` for an explicit one-shot observation), while `--jsonl` emits successive
+snapshots using schema version 2. It separates requested and resolved
+revisions and distinguishes verified, `complete_unverified`, and failed counts. See
+`docs/json-schema.md` for the exact contract and version 1 migration table.
+
+- `0` means the monitor completed normally or produced a requested one-time observation.
+- With successful managed cleanup, Ctrl+C returns `9` after final reconciliation unless
+  a final integrity failure returns `8` instead. Managed cleanup failure takes
+  precedence over both and returns downloader code `6`; `watch` and `attach` have no
+  managed child cleanup.
+- Dashboard `q` requests cancellation through the controls path and final reconciliation
+  before managed runner cleanup.
+- Stable classified failures use the category table above; CLI parser usage errors also use `2`.
 - `run` propagates the official downloader's nonzero exit status after monitoring it.
 - Operating-system launch failures and forced termination can produce platform-specific nonzero values.
 
@@ -460,6 +577,23 @@ Automation should treat any nonzero status as failure and preserve sanitized sta
 - `watch` and `run` are supported.
 - `attach` is not supported because this implementation relies on Linux `/proc` for POSIX attachment.
 - Verify downloaded standalone artifacts before handling any Gatekeeper prompt.
+
+ARM64 is represented in the workflow for native Windows, Linux, and macOS runners. A
+configured job is not a promise of availability: inspect completed release assets and
+use the Python package when the matching standalone file is absent.
+
+## Docker simulation
+
+Contributors can exercise the deterministic downloader, observer, verifier, renderer,
+final-pass, and cleanup boundary without contacting the Hub:
+
+```console
+docker build -f Dockerfile.test -t hf-download-live-monitor-test .
+docker run --rm hf-download-live-monitor-test
+```
+
+This validates a simulation, not a native Windows/macOS standalone artifact. Verify
+release checksums separately using the commands in Installation.
 
 ## Update, downgrade, and uninstall
 

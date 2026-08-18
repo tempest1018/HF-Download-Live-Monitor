@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -45,8 +47,59 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: python -m pytest tests/test_cli.py tests/test_filesystem.py -q
 
+  linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          architecture: arm64
+      - run: python -m pip install -e ".[dev,standalone]"
+      - name: Assert native ARM64 runner
+        run: python -c "import platform; from scripts.build_standalone import normalized_architecture; assert normalized_architecture(platform.machine()) == 'arm64', platform.machine()"
+      - name: Smoke and simulated-download tests
+        run: python -m pytest tests/test_cli.py tests/test_filesystem.py tests/integration/test_simulated_download.py -q
+      - name: Build Python distributions
+        run: python -m build
+      - name: Build and smoke standalone
+        run: |
+          python scripts/build_standalone.py
+          python -c "import subprocess; from pathlib import Path; from scripts.build_standalone import artifact_name; import platform; executable = Path('dist') / artifact_name(platform.system(), platform.machine()); subprocess.run([str(executable), '--help'], check=True)"
+
+  windows-macos-arm64:
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-11-arm
+            os: windows
+            arch: arm64
+          - runner: macos-15
+            os: macos
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          architecture: arm64
+      - run: python -m pip install -e ".[dev,standalone]"
+      - name: Assert native ARM64 runner
+        run: python -c "import platform; from scripts.build_standalone import normalized_architecture; assert normalized_architecture(platform.machine()) == 'arm64', platform.machine()"
+      - name: Smoke and simulated-download tests
+        run: python -m pytest tests/test_cli.py tests/test_filesystem.py tests/integration/test_simulated_download.py -q
+      - name: Build Python distributions
+        run: python -m build
+      - name: Build and smoke standalone
+        run: |
+          python scripts/build_standalone.py
+          python -c "import subprocess; from pathlib import Path; from scripts.build_standalone import artifact_name; import platform; executable = Path('dist') / artifact_name(platform.system(), platform.machine()); subprocess.run([str(executable), '--help'], check=True)"
+
   package:
-    needs: [quality, test, macos-smoke]
+    needs: [quality, test, macos-smoke, linux-arm64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

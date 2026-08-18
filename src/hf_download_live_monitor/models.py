@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+
+from hf_download_live_monitor.errors import ErrorCategory
 
 
 class RepoType(str, Enum):
@@ -29,6 +32,22 @@ class FileState(str, Enum):
     FINALIZING = "finalizing"
     COMPLETE = "complete"
     INCONSISTENT = "inconsistent"
+    SIZE_MATCHED = "size_matched"
+    VERIFYING = "verifying"
+    VERIFIED = "verified"
+    COMPLETE_UNVERIFIED = "complete_unverified"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class FileIdentity:
+    size: int
+    modified_ns: int
+
+    def __post_init__(self) -> None:
+        _validate_bytes(self.size)
+        if self.modified_ns < 0:
+            raise ValueError("file identity values must be non-negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,10 +71,26 @@ class DownloadSpec:
 class ManifestFile:
     filename: str
     expected_bytes: int
+    sha256: str | None = None
 
     def __post_init__(self) -> None:
         _validate_filename(self.filename)
         _validate_bytes(self.expected_bytes)
+        if self.sha256 is not None:
+            if re.fullmatch(r"[0-9a-fA-F]{64}", self.sha256) is None:
+                raise ValueError("SHA-256 digest must be exactly 64 hexadecimal characters")
+            object.__setattr__(self, "sha256", self.sha256.lower())
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadPlan:
+    spec: DownloadSpec
+    requested_revision: str
+    manifest: tuple[ManifestFile, ...]
+
+    def __post_init__(self) -> None:
+        if not self.requested_revision.strip():
+            raise ValueError("requested revision must not be empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +101,7 @@ class FileObservation:
     final_bytes: int | None
     partial_bytes: int | None
     observed_at: float
+    identity: FileIdentity | None = None
 
     def __post_init__(self) -> None:
         _validate_filename(self.filename)
@@ -98,7 +134,20 @@ class ProgressSnapshot:
     expected_bytes: int
     rate_bytes_per_second: float | None
     eta_seconds: float | None
+    requested_revision: str = ""
+    verified_files: int = 0
+    complete_unverified_files: int = 0
+    failed_files: int = 0
+    rate_history: tuple[float, ...] = ()
     errors: tuple[MonitorError, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.requested_revision:
+            object.__setattr__(self, "requested_revision", self.spec.revision)
+
+    @property
+    def resolved_revision(self) -> str:
+        return self.spec.revision
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +155,7 @@ class MonitorError(Exception):
     code: str
     message: str
     recoverable: bool = False
+    category: ErrorCategory = ErrorCategory.MONITOR
 
     def __post_init__(self) -> None:
         if not self.code.strip():
@@ -116,6 +166,14 @@ class MonitorError(Exception):
 
     def __str__(self) -> str:
         return self.message
+
+    def to_dict(self) -> dict[str, str | bool]:
+        return {
+            "category": self.category.value,
+            "code": self.code,
+            "message": self.message,
+            "recoverable": self.recoverable,
+        }
 
 
 def _validate_filename(filename: str) -> None:

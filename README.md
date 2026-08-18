@@ -2,10 +2,9 @@
 
 HF Download Live Monitor is a privacy-conscious, cross-platform terminal monitor for Hugging Face downloads. It reports accurate per-file and aggregate progress without replacing the official download client.
 
-> **Breaking rename:** Existing preview users must uninstall `hf-live-monitor` and install
-> `hf-download-live-monitor`. The former command and Python import package are not retained.
-
-New here? Follow the [complete user manual](docs/user-manual.md) for prerequisites, installation, authentication, first use, maintenance, and troubleshooting.
+New here? Follow the [complete user manual](docs/user-manual.md) for prerequisites,
+installation, authentication, first use, maintenance, and troubleshooting. Automation
+consumers should also read the [structured-output schema](docs/json-schema.md).
 
 Release commits, tags, and artifacts are authenticated with the public key documented in the
 [security policy](SECURITY.md#signature-verification).
@@ -73,9 +72,35 @@ The first Ctrl+C requests graceful child termination. If shutdown times out or i
 
 ## Standalone releases
 
-Tagged releases are configured to publish wheels and source distributions through PyPI Trusted Publishing and attach checksummed native Windows, Linux, and macOS executables. These workflows become active after repository ownership and release environments are configured.
+The release workflow is configured to build checksummed native Windows, Linux, and
+macOS executables for x86-64 and ARM64, plus wheels and source distributions. Treat a
+platform build as available only when it is present in a completed GitHub release;
+workflow configuration is not evidence that an artifact has passed on GitHub.
 
 ## Platforms and privacy
+
+Interactive terminals use the responsive **Adaptive Focus** dashboard. It selects a
+narrow, normal, or wide arrangement whenever the terminal is resized; choose the
+starting information density with `--view compact`, `--view balanced`, or
+`--view detailed`. Use `--reduced-motion`, `--ascii`, or `--no-color` for accessibility
+and compatibility. Redirected output automatically remains readable in logs.
+
+Before starting a managed download, the application resolves the requested revision
+to an immutable commit, checks repository access and destination capacity, and later
+verifies SHA-256 metadata when Hugging Face supplies it. A size-complete file without
+a supported digest is reported as `complete_unverified`, never as verified.
+
+Python wheels are the portable fallback on supported Python installations. The
+configured standalone matrix is:
+
+| Platform | x86-64 | ARM64 |
+| --- | --- | --- |
+| Windows | workflow configured | workflow configured |
+| Linux | workflow configured | workflow configured |
+| macOS | workflow configured | workflow configured |
+
+Availability is determined by the assets attached to a completed release. Verify the
+adjacent `.sha256` file before running any standalone executable.
 
 Explicit watch mode works on native Windows, WSL, Linux, and macOS. It queries repository metadata through `huggingface_hub` and observes only the selected local directory. HF Download Live Monitor has no telemetry and does not store credentials. Tokens are never included in structured output.
 

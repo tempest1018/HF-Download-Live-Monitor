@@ -4,11 +4,45 @@ All notable changes follow Keep a Changelog and semantic versioning.
 
 ## 0.1.0 - Unreleased
 
-- Rename the project, distribution, command, imports, and artifacts to HF Download Live Monitor.
-- Add portable explicit watch mode for models, datasets, and Spaces.
-- Add filtered manifests, safe local observation, rolling rates, and ETAs.
-- Add interactive, plain, JSON, and JSON Lines output.
-- Add credential redaction, path containment, typing, tests, and packaging.
+### Added
+
+- Add portable watch mode for models, datasets, and Spaces.
 - Add Windows and POSIX attachment with PID and interactive selection.
-- Add managed official-CLI launching with exit and interruption propagation.
-- Add PyInstaller and OIDC-based release workflows for checksummed artifacts.
+- Add Adaptive Focus with responsive layouts, three density modes, keyboard controls,
+  reduced motion, ASCII, no-color, and non-interactive fallbacks.
+- Add destination and disk-capacity preflight, immutable revision resolution, LFS
+  SHA-256 verification, and stable public error categories.
+- Add deterministic real-child and Docker download simulations.
+
+### Changed
+
+- Rename the project, distribution, command, imports, and artifacts to HF Download
+  Live Monitor.
+- Upgrade structured output to schema version 2 with requested/resolved revisions and
+  explicit verified, complete-unverified, and failed integrity counts.
+- Pin managed downloads and metadata queries to a resolved commit SHA.
+
+### Fixed
+
+- Guarantee downloader termination, escalation, and reaping when monitoring fails or
+  is cancelled.
+- Force final filesystem observation and verification after downloader exit.
+- Reconcile and render a final observation on Ctrl+C after managed child cleanup,
+  preserving integrity failure precedence over cancellation when cleanup succeeds and
+  downloader cleanup-failure precedence when it does not.
+- Bound background integrity work and invalidate cached hashes when file identity
+  changes.
+
+### Security
+
+- Keep authentication in the Hugging Face credential flow and redact credentials
+  from errors, process inspection, logs, and structured output.
+- Refuse to start when repository access, metadata, destination safety, or capacity
+  checks fail.
+
+### Distribution
+
+- Add architecture-labelled standalone artifacts and SHA-256 checksum files for
+  Windows, Linux, and macOS on x86-64 and ARM64.
+- Configure native ARM64 CI validation; release assets are available only after their
+  GitHub jobs pass. Retain source/wheel packages as the portable fallback.
