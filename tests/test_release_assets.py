@@ -308,6 +308,39 @@ def test_tag_release_only_stages_a_signed_validated_draft() -> None:
     assert "pypa/gh-action-pypi-publish" not in rendered
 
 
+def test_github_publication_is_manual_validated_and_build_free() -> None:
+    workflow = _workflow("publish-github-release")
+    triggers = _workflow_triggers(workflow)
+    assert set(triggers) == {"workflow_dispatch"}
+    tag = triggers["workflow_dispatch"]["inputs"]["tag"]
+    assert tag["required"] is True
+    assert tag["type"] == "string"
+    jobs = workflow["jobs"]
+    assert list(jobs) == ["publish"]
+    publish = jobs["publish"]
+    assert publish["environment"] == "github-release"
+    assert publish["permissions"] == {"contents": "write"}
+    rendered = Path(".github/workflows/publish-github-release.yml").read_text(encoding="utf-8")
+    for required in (
+        "fetch-depth: 0",
+        "SIGNING_KEY.asc",
+        "git verify-tag",
+        "gh release download",
+        "scripts/validate_release_bundle.py",
+        "--json isDraft,isPrerelease,tagName",
+        '--draft=false --prerelease=false --latest',
+    ):
+        assert required in rendered
+    for forbidden in (
+        "python -m build",
+        "PyInstaller",
+        "gh release upload",
+        "--clobber",
+        "pypa/gh-action-pypi-publish",
+    ):
+        assert forbidden not in rendered
+
+
 @pytest.mark.skipif(_BASH is None or _SHA256SUM is None, reason="bash or sha256sum is unavailable")
 def test_relative_aggregate_checksum_is_verifiable_when_assets_are_colocated(
     tmp_path: Path,
