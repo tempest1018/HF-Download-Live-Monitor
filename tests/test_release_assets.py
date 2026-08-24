@@ -328,7 +328,7 @@ def test_github_publication_is_manual_validated_and_build_free() -> None:
         "gh release download",
         "scripts/validate_release_bundle.py",
         "--json isDraft,isPrerelease,tagName",
-        '--draft=false --prerelease=false --latest',
+        "--draft=false --prerelease=false --latest",
     ):
         assert required in rendered
     for forbidden in (

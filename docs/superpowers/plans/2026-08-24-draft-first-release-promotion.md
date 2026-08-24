@@ -65,15 +65,16 @@ EXPECTED_STANDALONES = (
     "hf-download-live-monitor-macos-arm64",
 )
 
+
 class ReleaseValidationError(ValueError):
     pass
+
 
 def parse_stable_tag(tag: str) -> str:
     match = re.fullmatch(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", tag)
     if match is None:
         raise ReleaseValidationError(f"expected stable tag vMAJOR.MINOR.PATCH, got {tag!r}")
     return tag[1:]
-
 ```
 
 Add three further public functions with exact signatures
@@ -112,7 +113,6 @@ class ValidatedBundle:
     wheel: Path
     sdist: Path
     standalones: tuple[Path, ...]
-
 ```
 
 Add `write_aggregate_checksums(directory: Path) -> Path` and
