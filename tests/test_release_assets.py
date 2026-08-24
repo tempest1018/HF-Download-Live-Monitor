@@ -341,6 +341,35 @@ def test_github_publication_is_manual_validated_and_build_free() -> None:
         assert forbidden not in rendered
 
 
+def test_pypi_promotion_is_manual_oidc_only_and_build_free() -> None:
+    workflow = _workflow("publish-pypi")
+    triggers = _workflow_triggers(workflow)
+    assert set(triggers) == {"workflow_dispatch"}
+    assert triggers["workflow_dispatch"]["inputs"]["tag"]["required"] is True
+    promote = workflow["jobs"]["promote"]
+    assert promote["environment"] == "pypi"
+    assert promote["permissions"] == {"contents": "read", "id-token": "write"}
+    rendered = Path(".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
+    for required in (
+        "git verify-tag",
+        "gh release download",
+        "scripts/validate_release_bundle.py",
+        "--json isDraft,isPrerelease,tagName",
+        "pypa/gh-action-pypi-publish@release/v1",
+        "packages-dir: python-distributions/",
+    ):
+        assert required in rendered
+    for forbidden in (
+        "python -m build",
+        "PyInstaller",
+        "gh release edit",
+        "gh release upload",
+        "contents: write",
+        "skip-existing",
+    ):
+        assert forbidden not in rendered
+
+
 @pytest.mark.skipif(_BASH is None or _SHA256SUM is None, reason="bash or sha256sum is unavailable")
 def test_relative_aggregate_checksum_is_verifiable_when_assets_are_colocated(
     tmp_path: Path,
