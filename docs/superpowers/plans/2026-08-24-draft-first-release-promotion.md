@@ -162,7 +162,7 @@ assert "finalize-github-release" not in jobs
 assert jobs["stage-github-release"]["needs"] == ["validate-release-assets"]
 ```
 
-Also assert `fetch-depth: 0`, `git verify-tag`, import of `SIGNING_KEY.asc`, the shared validator command, flat `python-distributions` download, `actions/attest-build-provenance@v3` in both build jobs, least-privilege attestation permissions, draft creation, and an explicit failure when `isDraft` is `false`. Prohibit `--draft=false`, the PyPI action, and a successful early exit for a public release.
+Also assert `fetch-depth: 0`, `git verify-tag`, import of `SIGNING_KEY.asc`, the shared validator command, flat `python-distributions` download, `actions/attest@v4` in both build jobs, least-privilege attestation permissions, draft creation, and an explicit failure when `isDraft` is `false`. Prohibit `--draft=false`, the PyPI action, and a successful early exit for a public release.
 
 - [ ] **Step 2: Run workflow tests and verify RED**
 
@@ -183,9 +183,10 @@ permissions:
   contents: read
   id-token: write
   attestations: write
+  artifact-metadata: write
 ```
 
-After each successful build/smoke test, invoke `actions/attest-build-provenance@v3` with the exact wheel/sdist glob or exact matrix executable and checksum paths. Keep release-write permission out of all build jobs.
+After each successful build/smoke test, invoke `actions/attest@v4` with the exact wheel/sdist glob or exact matrix executable and checksum paths. Keep release-write permission out of all build jobs.
 
 - [ ] **Step 5: Flatten and validate the staged bundle**
 
@@ -413,7 +414,7 @@ Run:
 git log --show-signature --format=fuller main..HEAD
 git status --short --branch
 git diff --name-status main..HEAD
-git diff main..HEAD | rg -n -i "(hf_[a-z0-9]{20,}|bearer\s+[a-z0-9._-]+|password|passphrase|private key|C:\\Users\\Tempest)"
+git diff main..HEAD | rg -n -i "(hf_[a-z0-9]{20,}|bearer\s+[a-z0-9._-]+|password|passphrase|private key|C:\\Users\\[^\\]+)"
 ```
 
 Expected: every commit has a good signature, the tree is clean, only planned files changed, and the scan contains no credential or personal-path disclosure. The checked-in public key is expected and is not a private-key finding.

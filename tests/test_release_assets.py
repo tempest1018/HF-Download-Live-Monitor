@@ -267,7 +267,7 @@ def test_release_workflow_has_exact_native_standalone_matrix_and_unique_assets()
     assert "name: standalone-${{ matrix.os }}-${{ matrix.arch }}" in rendered
     assert "python-distributions" in rendered
     assert "merge-multiple: true" in rendered
-    assert rendered.count("actions/attest-build-provenance@v3") == 2
+    assert rendered.count("actions/attest@v4") == 2
 
 
 def test_tag_release_only_stages_a_signed_validated_draft() -> None:
@@ -287,6 +287,7 @@ def test_tag_release_only_stages_a_signed_validated_draft() -> None:
     assert "scripts/validate_release_bundle.py release-assets" in rendered
     assert "--write-aggregate" in rendered
     assert "attestations: write" in rendered
+    assert "artifact-metadata: write" in rendered
     assert "id-token: write" in rendered
     for name in [
         "hf-download-live-monitor-windows-x86_64.exe",
