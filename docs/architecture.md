@@ -52,9 +52,15 @@ Private local-cache naming is isolated in `compat.py`; uncertainty falls back to
 conservative non-reuse. Polling is the portable correctness baseline, and every refresh
 indexes partial files once.
 
-Release automation is configured to label artifacts by normalized operating system and
-architecture and to run native Windows, Linux, and macOS jobs on x86-64 and ARM64.
-Only completed workflow results establish availability. Python wheels remain the
-portable fallback. A deterministic incremental-downloader fixture exercises the real
+Release automation labels artifacts by normalized operating system and architecture
+and runs native Windows, Linux, and macOS jobs on x86-64 and ARM64. It uses a
+build once, promote-without-rebuilding boundary. A GPG-signed tag is verified with the
+checked-in public key, builds receive GitHub artifact attestations, and the tag workflow
+can stage only a draft release. The manual `Publish GitHub Release` workflow validates
+the same flat bundle in the protected `github-release` environment before making it
+public. The independent `Publish PyPI` workflow may later promote the exact public
+wheel and source archive with OIDC; PyPI promotion is optional and manual. Only
+completed workflow results establish availability. Python wheels remain the portable
+fallback. A deterministic incremental-downloader fixture exercises the real
 subprocess, observer, verifier, renderer boundary, final pass, and cleanup locally and
 in Docker.
