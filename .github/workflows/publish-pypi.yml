@@ -1,0 +1,65 @@
+name: Publish PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Public stable tag to promote
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-pypi-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Verify signed tag
+        env:
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GNUPGHOME="$(mktemp -d)"
+          chmod 700 "$GNUPGHOME"
+          gpg --batch --import SIGNING_KEY.asc
+          git verify-tag "$TAG"
+      - name: Download and validate public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS=$'\t' read -r is_draft is_prerelease release_tag < <(
+            gh release view "$TAG" --json isDraft,isPrerelease,tagName \
+              --jq '[.isDraft,.isPrerelease,.tagName] | @tsv'
+          )
+          [[ "$is_draft" == "false" ]]
+          [[ "$is_prerelease" == "false" ]]
+          [[ "$release_tag" == "$TAG" ]]
+          mkdir release-assets python-distributions
+          gh release download "$TAG" --dir release-assets
+          python scripts/validate_release_bundle.py release-assets \
+            --tag "$TAG" --project-file pyproject.toml
+          cp release-assets/hf_download_live_monitor-*.whl python-distributions/
+          cp release-assets/hf_download_live_monitor-*.tar.gz python-distributions/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python-distributions/

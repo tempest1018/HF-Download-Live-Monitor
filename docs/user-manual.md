@@ -733,6 +733,50 @@ Use only one structured mode, redirect standard output, and keep downloader outp
 
 Official release binaries are built in clean environments. Do not distribute a binary built from a development environment containing unrelated optional ML frameworks. Rebuild in a clean virtual environment using the documented release script.
 
+## Release operations
+
+Maintainers release from a clean, reviewed commit using a three-stage process. First,
+create and push the GPG-signed tag:
+
+```powershell
+git tag -s v0.1.0 -m "HF Download Live Monitor v0.1.0"
+git push origin v0.1.0
+```
+
+Tag creation does not publish the release publicly. The tag workflow verifies the
+signature, version, test suite, six native builds, checksums, and artifact attestation
+records, then creates a private draft release. Review the draft and its assets before
+running the protected publication workflow:
+
+```powershell
+gh workflow run "Publish GitHub Release" -f tag=v0.1.0
+```
+
+The `Publish GitHub Release` workflow repeats tag, inventory, package metadata, and
+checksum validation in the `github-release` environment. It does not rebuild or replace
+files; it makes the validated draft public. Downloaded files can be checked with:
+
+```powershell
+sha256sum -c SHA256SUMS
+gh attestation verify <downloaded-file> --repo tempest1018/HF-Download-Live-Monitor
+```
+
+`SHA256SUMS` uses basename-only entries, so keep it alongside all downloaded release
+assets when checking the complete bundle. The GPG signature authenticates the source
+tag; GitHub's keyless artifact attestation authenticates CI-built payloads. The private
+GPG key and passphrase are never stored in GitHub.
+
+PyPI promotion is optional and manual. It is deliberately outside the GitHub-only
+release milestone. If separately authorized later, the protected workflow is:
+
+```powershell
+gh workflow run "Publish PyPI" -f tag=v0.1.0
+```
+
+`Publish PyPI` downloads the already-public GitHub bundle, verifies it, and sends the
+exact wheel and source archive to PyPI through OIDC. It does not build a second copy.
+Published assets are immutable; corrections use a new semantic version.
+
 ## Privacy and security
 
 - No telemetry is collected.

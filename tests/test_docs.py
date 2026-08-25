@@ -230,3 +230,27 @@ def test_interrupt_reconciliation_contract_is_documented_without_old_claims() ->
         "stopped and reaped before final reconciliation",
     ):
         assert unconditional not in combined
+
+
+def test_version_and_draft_first_release_contract_are_documented() -> None:
+    project = Path("pyproject.toml").read_text(encoding="utf-8")
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+    manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
+    architecture = Path("docs/architecture.md").read_text(encoding="utf-8")
+    combined = "\n".join((readme, manual, architecture))
+    assert 'version = "0.1.0"' in project
+    assert "## 0.1.0 - 2026-08-24" in changelog
+    assert "## 0.1.0 - Unreleased" not in changelog
+    for required in (
+        "draft release",
+        "Publish GitHub Release",
+        "Publish PyPI",
+        "github-release",
+        "build once",
+        "GPG-signed tag",
+        "artifact attestation",
+    ):
+        assert required in combined
+    assert "Tag creation does not publish the release publicly" in combined
+    assert "PyPI promotion is optional and manual" in combined

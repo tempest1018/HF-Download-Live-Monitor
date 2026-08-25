@@ -10,11 +10,31 @@ permissions:
 jobs:
   verify-and-build-python:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Verify signed tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GNUPGHOME="$(mktemp -d)"
+          chmod 700 "$GNUPGHOME"
+          gpg --batch --import SIGNING_KEY.asc
+          git verify-tag "$GITHUB_REF_NAME"
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
+      - name: Verify tag and project version agree
+        run: >-
+          python -c "from pathlib import Path; from scripts.validate_release_bundle import
+          parse_stable_tag, project_version; assert parse_stable_tag('${{ github.ref_name }}')
+          == project_version(Path('pyproject.toml'))"
       - run: python -m pip install -e ".[dev]"
       - run: python -m ruff format --check .
       - run: python -m ruff check .
@@ -22,6 +42,9 @@ jobs:
       - run: python -m pytest -q
       - run: python -m build
       - run: python -m twine check dist/*
+      - uses: actions/attest@v4
+        with:
+          subject-path: dist/*
       - uses: actions/upload-artifact@v7
         with:
           name: python-distributions
@@ -64,6 +87,11 @@ jobs:
             python_arch: arm64
             artifact: hf-download-live-monitor-macos-arm64
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -77,6 +105,9 @@ jobs:
       - name: Smoke test executable
         run: |
           python -c "import subprocess; executable = r'dist/${{ matrix.artifact }}'; subprocess.run([executable, '--help'], check=True); subprocess.run([executable, 'attach', '--help'], check=True); subprocess.run([executable, 'run', '--help'], check=True)"
+      - uses: actions/attest@v4
+        with:
+          subject-path: dist/${{ matrix.artifact }}*
       - uses: actions/upload-artifact@v7
         with:
           name: standalone-${{ matrix.os }}-${{ matrix.arch }}
@@ -88,6 +119,10 @@ jobs:
     needs: [verify-and-build-python, standalone]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
       - uses: actions/download-artifact@v8
         with:
           pattern: standalone-*
@@ -96,29 +131,11 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: python-distributions
-          path: release-assets/dist
+          path: release-assets
       - name: Validate complete release asset set
-        shell: bash
-        run: |
-          cd release-assets
-          expected=(
-            hf-download-live-monitor-windows-x86_64.exe
-            hf-download-live-monitor-windows-arm64.exe
-            hf-download-live-monitor-linux-x86_64
-            hf-download-live-monitor-linux-arm64
-            hf-download-live-monitor-macos-x86_64
-            hf-download-live-monitor-macos-arm64
-          )
-          test "$(find . -maxdepth 1 -type f -name 'hf-download-live-monitor-*' ! -name '*.sha256' | wc -l)" -eq 6
-          for file in "${expected[@]}"; do
-            test -f "$file"
-            test -f "$file.sha256"
-            sha256sum -c "$file.sha256"
-          done
-          compgen -G 'dist/*.whl' > /dev/null
-          compgen -G 'dist/*.tar.gz' > /dev/null
-          find . -type f ! -name '*.sha256' ! -name 'SHA256SUMS' -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
-          sha256sum -c SHA256SUMS
+        run: >-
+          python scripts/validate_release_bundle.py release-assets
+          --tag "$GITHUB_REF_NAME" --project-file pyproject.toml --write-aggregate
       - uses: actions/upload-artifact@v7
         with:
           name: release-assets-bundle
@@ -134,42 +151,18 @@ jobs:
         with:
           name: release-assets-bundle
           path: release-assets
-      - name: Create draft release if needed
+      - name: Create or update draft release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          set -euo pipefail
           release_state="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null || true)"
           if [[ "$release_state" == "false" ]]; then
-            exit 0
+            echo "refusing to modify public release $GITHUB_REF_NAME" >&2
+            exit 1
           fi
           if [[ -z "$release_state" ]]; then
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag --generate-notes
           fi
           find release-assets -type f -print0 | xargs -0 gh release upload "$GITHUB_REF_NAME" --clobber
-
-  publish-pypi:
-    needs: [stage-github-release]
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          name: python-distributions
-          path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
-
-  finalize-github-release:
-    needs: [publish-pypi]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Publish staged release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false

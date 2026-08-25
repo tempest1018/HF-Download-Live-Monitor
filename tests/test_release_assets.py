@@ -265,28 +265,30 @@ def test_release_workflow_has_exact_native_standalone_matrix_and_unique_assets()
     assert "architecture: ${{ matrix.python_arch }}" in rendered
     assert "dist/${{ matrix.artifact }}" in rendered
     assert "name: standalone-${{ matrix.os }}-${{ matrix.arch }}" in rendered
-    assert "! -name '*.sha256'" in rendered
-    assert "! -name 'SHA256SUMS'" in rendered
     assert "python-distributions" in rendered
     assert "merge-multiple: true" in rendered
-    assert "pypa/gh-action-pypi-publish@release/v1" in rendered
+    assert rendered.count("actions/attest@v4") == 2
 
 
-def test_release_stages_draft_before_pypi_then_finalizes_public_release() -> None:
-    jobs = _workflow("release")["jobs"]
+def test_tag_release_only_stages_a_signed_validated_draft() -> None:
+    workflow = _workflow("release")
+    assert _workflow_triggers(workflow) == {"push": {"tags": ["v*"]}}
+    jobs = workflow["jobs"]
     assert isinstance(jobs, dict)
     validation = jobs["validate-release-assets"]
     assert validation["needs"] == ["verify-and-build-python", "standalone"]
     assert jobs["stage-github-release"]["needs"] == ["validate-release-assets"]
-    assert jobs["publish-pypi"]["needs"] == ["stage-github-release"]
-    assert jobs["finalize-github-release"]["needs"] == ["publish-pypi"]
-    assert "github-release" not in jobs
+    assert "publish-pypi" not in jobs
+    assert "finalize-github-release" not in jobs
     rendered = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    assert "cd release-assets" in rendered
-    assert "find . -type f" in rendered
-    assert "! -name '*.sha256'" in rendered
-    assert "! -name 'SHA256SUMS'" in rendered
-    assert "sha256sum -c" in rendered
+    assert "fetch-depth: 0" in rendered
+    assert "gpg --batch --import SIGNING_KEY.asc" in rendered
+    assert 'git verify-tag "$GITHUB_REF_NAME"' in rendered
+    assert "scripts/validate_release_bundle.py release-assets" in rendered
+    assert "--write-aggregate" in rendered
+    assert "attestations: write" in rendered
+    assert "artifact-metadata: write" in rendered
+    assert "id-token: write" in rendered
     for name in [
         "hf-download-live-monitor-windows-x86_64.exe",
         "hf-download-live-monitor-windows-arm64.exe",
@@ -296,15 +298,77 @@ def test_release_stages_draft_before_pypi_then_finalizes_public_release() -> Non
         "hf-download-live-monitor-macos-arm64",
     ]:
         assert name in rendered
-    assert "dist/*.whl" in rendered
-    assert "dist/*.tar.gz" in rendered
     assert 'gh release create "$GITHUB_REF_NAME" --draft' in rendered
     assert "--generate-notes" in rendered
     assert "find release-assets -type f -print0" in rendered
     assert "--json isDraft" in rendered
     assert "--clobber" in rendered
-    assert "--draft=false" in rendered
-    assert "skip-existing: true" in rendered
+    assert 'if [[ "$release_state" == "false" ]]; then' in rendered
+    assert "exit 1" in rendered
+    assert "--draft=false" not in rendered
+    assert "pypa/gh-action-pypi-publish" not in rendered
+
+
+def test_github_publication_is_manual_validated_and_build_free() -> None:
+    workflow = _workflow("publish-github-release")
+    triggers = _workflow_triggers(workflow)
+    assert set(triggers) == {"workflow_dispatch"}
+    tag = triggers["workflow_dispatch"]["inputs"]["tag"]
+    assert tag["required"] is True
+    assert tag["type"] == "string"
+    jobs = workflow["jobs"]
+    assert list(jobs) == ["publish"]
+    publish = jobs["publish"]
+    assert publish["environment"] == "github-release"
+    assert publish["permissions"] == {"contents": "write"}
+    rendered = Path(".github/workflows/publish-github-release.yml").read_text(encoding="utf-8")
+    for required in (
+        "fetch-depth: 0",
+        "SIGNING_KEY.asc",
+        "git verify-tag",
+        "gh release download",
+        "scripts/validate_release_bundle.py",
+        "--json isDraft,isPrerelease,tagName",
+        "--draft=false --prerelease=false --latest",
+    ):
+        assert required in rendered
+    for forbidden in (
+        "python -m build",
+        "PyInstaller",
+        "gh release upload",
+        "--clobber",
+        "pypa/gh-action-pypi-publish",
+    ):
+        assert forbidden not in rendered
+
+
+def test_pypi_promotion_is_manual_oidc_only_and_build_free() -> None:
+    workflow = _workflow("publish-pypi")
+    triggers = _workflow_triggers(workflow)
+    assert set(triggers) == {"workflow_dispatch"}
+    assert triggers["workflow_dispatch"]["inputs"]["tag"]["required"] is True
+    promote = workflow["jobs"]["promote"]
+    assert promote["environment"] == "pypi"
+    assert promote["permissions"] == {"contents": "read", "id-token": "write"}
+    rendered = Path(".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
+    for required in (
+        "git verify-tag",
+        "gh release download",
+        "scripts/validate_release_bundle.py",
+        "--json isDraft,isPrerelease,tagName",
+        "pypa/gh-action-pypi-publish@release/v1",
+        "packages-dir: python-distributions/",
+    ):
+        assert required in rendered
+    for forbidden in (
+        "python -m build",
+        "PyInstaller",
+        "gh release edit",
+        "gh release upload",
+        "contents: write",
+        "skip-existing",
+    ):
+        assert forbidden not in rendered
 
 
 @pytest.mark.skipif(_BASH is None or _SHA256SUM is None, reason="bash or sha256sum is unavailable")
