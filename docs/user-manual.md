@@ -744,8 +744,12 @@ git push origin v0.1.0
 ```
 
 Tag creation does not publish the release publicly. The tag workflow verifies the
-signature, version, test suite, six native builds, checksums, and artifact attestation
-records, then creates a private draft release. Review the draft and its assets before
+signature against an independently stored public key pinned to fingerprint
+`BF317715C9E7B15A750F481A5C53F25769B6CA89`, requires the tagged commit to be reachable
+from protected `main`, and then verifies the version, test suite, six native builds,
+checksums, and artifact attestation records before creating a private draft release.
+The repository's protected `v*` tag rules restrict tag creation, update, and deletion.
+Review the draft and its assets before
 running the protected publication workflow:
 
 ```powershell
@@ -757,7 +761,11 @@ checksum validation in the `github-release` environment. It does not rebuild or 
 files; it makes the validated draft public. Downloaded files can be checked with:
 
 ```powershell
-sha256sum -c SHA256SUMS
+Get-Content .\SHA256SUMS | ForEach-Object {
+    $expected, $name = $_ -split '  ', 2
+    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $name).Hash.ToLowerInvariant()
+    if ($actual -ne $expected) { throw "Checksum mismatch: $name" }
+}
 gh attestation verify <downloaded-file> --repo tempest1018/HF-Download-Live-Monitor
 ```
 

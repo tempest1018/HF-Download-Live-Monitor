@@ -325,7 +325,12 @@ def test_github_publication_is_manual_validated_and_build_free() -> None:
     workflow = _workflow("publish-github-release")
     triggers = _workflow_triggers(workflow)
     assert set(triggers) == {"workflow_dispatch"}
-    tag = triggers["workflow_dispatch"]["inputs"]["tag"]
+    dispatch = triggers["workflow_dispatch"]
+    assert isinstance(dispatch, dict)
+    inputs = dispatch["inputs"]
+    assert isinstance(inputs, dict)
+    tag = inputs["tag"]
+    assert isinstance(tag, dict)
     assert tag["required"] is True
     assert tag["type"] == "string"
     jobs = workflow["jobs"]
@@ -358,7 +363,13 @@ def test_pypi_promotion_is_manual_oidc_only_and_build_free() -> None:
     workflow = _workflow("publish-pypi")
     triggers = _workflow_triggers(workflow)
     assert set(triggers) == {"workflow_dispatch"}
-    assert triggers["workflow_dispatch"]["inputs"]["tag"]["required"] is True
+    dispatch = triggers["workflow_dispatch"]
+    assert isinstance(dispatch, dict)
+    inputs = dispatch["inputs"]
+    assert isinstance(inputs, dict)
+    tag = inputs["tag"]
+    assert isinstance(tag, dict)
+    assert tag["required"] is True
     promote = workflow["jobs"]["promote"]
     assert promote["environment"] == "pypi"
     assert promote["permissions"] == {"contents": "read", "id-token": "write"}
