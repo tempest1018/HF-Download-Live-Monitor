@@ -23,6 +23,16 @@ def _command(name: str, git_subdirectory: str) -> str | None:
 
 _BASH = _command("bash", "bin")
 _SHA256SUM = _command("sha256sum", "usr/bin")
+_RELEASE_FINGERPRINT = "BF317715C9E7B15A750F481A5C53F25769B6CA89"
+
+
+def _assert_independent_tag_trust(rendered: str) -> None:
+    assert "${{ vars.RELEASE_SIGNING_KEY_B64 }}" in rendered
+    assert _RELEASE_FINGERPRINT in rendered
+    assert "gpg --show-keys --with-colons" in rendered
+    assert "git merge-base --is-ancestor" in rendered
+    assert "refs/remotes/origin/main" in rendered
+    assert "SIGNING_KEY.asc" not in rendered
 
 
 def test_artifact_naming_can_be_imported_without_pyinstaller(
@@ -284,7 +294,7 @@ def test_tag_release_only_stages_a_signed_validated_draft() -> None:
     assert "finalize-github-release" not in jobs
     rendered = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     assert "fetch-depth: 0" in rendered
-    assert "gpg --batch --import SIGNING_KEY.asc" in rendered
+    _assert_independent_tag_trust(rendered)
     assert 'git verify-tag "$GITHUB_REF_NAME"' in rendered
     assert "scripts/validate_release_bundle.py release-assets" in rendered
     assert "--write-aggregate" in rendered
@@ -324,9 +334,9 @@ def test_github_publication_is_manual_validated_and_build_free() -> None:
     assert publish["environment"] == "github-release"
     assert publish["permissions"] == {"contents": "write"}
     rendered = Path(".github/workflows/publish-github-release.yml").read_text(encoding="utf-8")
+    _assert_independent_tag_trust(rendered)
     for required in (
         "fetch-depth: 0",
-        "SIGNING_KEY.asc",
         "git verify-tag",
         "gh release download",
         "scripts/validate_release_bundle.py",
@@ -353,6 +363,7 @@ def test_pypi_promotion_is_manual_oidc_only_and_build_free() -> None:
     assert promote["environment"] == "pypi"
     assert promote["permissions"] == {"contents": "read", "id-token": "write"}
     rendered = Path(".github/workflows/publish-pypi.yml").read_text(encoding="utf-8")
+    _assert_independent_tag_trust(rendered)
     for required in (
         "git verify-tag",
         "gh release download",
