@@ -75,6 +75,25 @@ def test_manifest_rejects_response_without_sizes() -> None:
     assert caught.value.code == "metadata_unavailable"
 
 
+@pytest.mark.parametrize("invalid_size", [-1, "12", "invalid", 1.5, True])
+@pytest.mark.parametrize("location", ["direct", "lfs"])
+def test_manifest_classifies_invalid_file_size_metadata(
+    invalid_size: object, location: str
+) -> None:
+    sibling = (
+        SimpleNamespace(rfilename="file.bin", size=invalid_size, lfs=None)
+        if location == "direct"
+        else SimpleNamespace(rfilename="file.bin", size=None, lfs={"size": invalid_size})
+    )
+
+    with pytest.raises(MonitorError) as caught:
+        HubRepository(FakeApi([sibling])).manifest(DownloadSpec("owner/repo", Path("out")))
+
+    assert caught.value.code == "invalid_file_metadata"
+    assert caught.value.category is ErrorCategory.REPOSITORY
+    assert "invalid file-size metadata" in caught.value.message
+
+
 def test_manifest_applies_requested_file_filters() -> None:
     api = FakeApi(
         [

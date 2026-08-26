@@ -79,7 +79,14 @@ class HubRepository:
         files: list[ManifestFile] = []
         for sibling in getattr(info, "siblings", None) or ():
             filename = _metadata_value(sibling, "rfilename")
-            size = _sibling_size(sibling)
+            try:
+                size = _sibling_size(sibling)
+            except ValueError as exc:
+                raise MonitorError(
+                    "invalid_file_metadata",
+                    "the Hub returned invalid file-size metadata",
+                    category=ErrorCategory.REPOSITORY,
+                ) from exc
             if filename and size is not None:
                 files.append(
                     ManifestFile(
@@ -132,11 +139,17 @@ class HubRepository:
 
 def _sibling_size(sibling: object) -> int | None:
     direct = _metadata_value(sibling, "size")
-    if isinstance(direct, (int, str)):
-        return int(direct)
+    if direct is not None:
+        return _non_negative_int(direct)
     lfs = _metadata_value(sibling, "lfs")
     size = _metadata_value(lfs, "size") if lfs is not None else None
-    return int(size) if isinstance(size, (int, str)) else None
+    return _non_negative_int(size) if size is not None else None
+
+
+def _non_negative_int(value: object) -> int:
+    if type(value) is not int or value < 0:
+        raise ValueError("file size must be a non-negative integer")
+    return value
 
 
 def _sibling_sha256(sibling: object) -> str | None:
