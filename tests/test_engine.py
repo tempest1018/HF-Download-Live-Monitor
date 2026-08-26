@@ -1,4 +1,5 @@
 import hashlib
+import threading
 from pathlib import Path
 
 import pytest
@@ -79,24 +80,44 @@ def test_decreasing_bytes_never_reports_negative_rate() -> None:
     assert snapshot.files[0].rate_bytes_per_second == 0.0
 
 
-def test_digest_file_is_not_complete_before_verification(tmp_path: Path) -> None:
+def test_digest_file_is_not_complete_before_verification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     content = b"expected"
     target = tmp_path / "model.bin"
     target.write_bytes(content)
+    import hf_download_live_monitor.integrity as integrity
+
+    real = integrity.sha256_file
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocked(candidate: Path, chunk_size: int = 1024 * 1024) -> str:
+        started.set()
+        release.wait(2)
+        return real(candidate, chunk_size)
+
+    monkeypatch.setattr(integrity, "sha256_file", blocked)
     plan = DownloadPlan(
         DownloadSpec("owner/repo", tmp_path, revision="a" * 40),
         "main",
         (ManifestFile("model.bin", len(content), hashlib.sha256(content).hexdigest()),),
     )
 
-    snapshot = ProgressEngine().update(
-        plan,
-        observation(1.0, len(content), expected=len(content), final=len(content)),
-        now=1.0,
-    )
+    engine = ProgressEngine()
+    try:
+        snapshot = engine.update(
+            plan,
+            observation(1.0, len(content), expected=len(content), final=len(content)),
+            now=1.0,
+        )
 
-    assert snapshot.files[0].state in {FileState.SIZE_MATCHED, FileState.VERIFYING}
-    assert snapshot.files[0].state is not FileState.COMPLETE
+        assert started.wait(1)
+        assert snapshot.files[0].state in {FileState.SIZE_MATCHED, FileState.VERIFYING}
+        assert snapshot.files[0].state is not FileState.COMPLETE
+    finally:
+        release.set()
+        engine.close()
 
 
 def test_final_digest_match_is_verified(tmp_path: Path) -> None:
