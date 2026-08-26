@@ -54,9 +54,13 @@ indexes partial files once.
 
 Release automation labels artifacts by normalized operating system and architecture
 and runs native Windows, Linux, and macOS jobs on x86-64 and ARM64. It uses a
-build once, promote-without-rebuilding boundary. A GPG-signed tag is verified with the
-checked-in public key, builds receive GitHub artifact attestations, and the tag workflow
-can stage only a draft release. The manual `Publish GitHub Release` workflow validates
+build once, promote-without-rebuilding boundary. A GPG-signed tag is verified with an
+independently stored public key pinned to fingerprint
+`BF317715C9E7B15A750F481A5C53F25769B6CA89`; the key contained in a release tag is not a
+trust source. Release commits must be reachable from protected `main`, and protected
+`v*` tag rules restrict tag creation, update, and deletion. Builds receive GitHub artifact
+attestations, and the tag workflow can stage only a draft release. The manual `Publish
+GitHub Release` workflow validates
 the same flat bundle in the protected `github-release` environment before making it
 public. The independent `Publish PyPI` workflow may later promote the exact public
 wheel and source archive with OIDC; PyPI promotion is optional and manual. Only

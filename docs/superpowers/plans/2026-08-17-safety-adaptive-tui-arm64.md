@@ -454,7 +454,13 @@ def _stop_and_reap(process: ChildProcess, grace: float = 5.0) -> int:
         return process.wait()
 ```
 
-Wrap application execution in `try/except BaseException`; on any exception call `_stop_and_reap`, attach cleanup failure as a note with `exc.add_note(...)`, then re-raise the original. On normal monitor completion, `wait()` naturally. Build the child command only from `plan.spec`, ensuring the resolved SHA is passed with `--revision` even when the requested revision was `main`.
+Wrap application execution in `try/except BaseException`; on any exception call
+`_stop_and_reap`, attach a sanitized cleanup diagnostic with the runtime's Python
+3.10-compatible note/context helper, then re-raise the original. Do not call
+`Exception.add_note()` unconditionally because it was introduced in Python 3.11. On
+normal monitor completion, `wait()` naturally. Build the child command only from
+`plan.spec`, ensuring the resolved SHA is passed with `--revision` even when the requested
+revision was `main`.
 
 - [ ] **Step 4: Validate runner behavior**
 

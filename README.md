@@ -77,8 +77,10 @@ macOS executables for x86-64 and ARM64, plus wheels and source distributions. Tr
 platform build as available only when it is present in a completed GitHub release;
 workflow configuration is not evidence that an artifact has passed on GitHub.
 
-Releases use a draft-first, build-once process. A GPG-signed tag stages a private draft
-release; tag creation does not publish the release publicly. The separately approved
+Releases use a draft-first, build-once process. A GPG-signed tag is checked against an
+independently stored, fingerprint-pinned public key and must identify a protected-main
+commit before it stages a private draft release; tag creation does not publish the release
+publicly. The separately approved
 `Publish GitHub Release` workflow verifies the complete bundle before publication.
 GitHub artifact attestations identify files built by CI. PyPI promotion is optional and
 manual through the isolated `Publish PyPI` workflow.

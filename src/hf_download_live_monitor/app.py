@@ -159,7 +159,17 @@ class WatchApplication:
                 if primary_error is not None:
                     self._attach_close_note(primary_error, close_error)
                 elif not error_in_flight:
-                    raise close_error
+                    if isinstance(close_error, (KeyboardInterrupt, SystemExit)):
+                        raise close_error
+                    try:
+                        error_name = type(close_error).__name__
+                    except BaseException:
+                        error_name = "unknown error"
+                    raise MonitorError(
+                        "resource_cleanup_failed",
+                        f"resource cleanup failed ({error_name})",
+                        category=ErrorCategory.MONITOR,
+                    ) from None
 
     def _observe_and_render(self, plan: DownloadPlan, *, final: bool) -> ProgressSnapshot:
         now = self._clock()

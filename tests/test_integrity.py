@@ -154,6 +154,7 @@ def test_worker_pool_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     import hf_download_live_monitor.integrity as integrity
 
     gate = threading.Event()
+    started = threading.Event()
     active = 0
     peak = 0
     lock = threading.Lock()
@@ -163,6 +164,7 @@ def test_worker_pool_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         with lock:
             active += 1
             peak = max(peak, active)
+            started.set()
         gate.wait(2)
         with lock:
             active -= 1
@@ -172,7 +174,7 @@ def test_worker_pool_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     with IntegrityVerifier(max_workers=1) as verifier:
         verifier.request(paths[0], SHA_ABC)
         verifier.request(paths[1], SHA_ABC)
-        time.sleep(0.02)
+        assert started.wait(2), "hash worker did not start"
         assert peak == 1
         gate.set()
 

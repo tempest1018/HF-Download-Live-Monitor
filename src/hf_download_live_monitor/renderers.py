@@ -99,13 +99,13 @@ class PlainRenderer:
 class JsonRenderer:
     def __init__(self, stream: TextIO | None = None) -> None:
         self._stream = stream or sys.stdout
-        self._rendered = False
+        self._latest: ProgressSnapshot | None = None
+        self._closed = False
 
     def render(self, snapshot: ProgressSnapshot) -> None:
-        if self._rendered:
+        if self._closed:
             return
-        self._rendered = True
-        self._emit(snapshot)
+        self._latest = snapshot
 
     def _emit(self, snapshot: ProgressSnapshot) -> None:
         json.dump(snapshot_to_dict(snapshot), self._stream, sort_keys=True)
@@ -113,7 +113,11 @@ class JsonRenderer:
         self._stream.flush()
 
     def close(self) -> None:
-        pass
+        if self._closed:
+            return
+        self._closed = True
+        if self._latest is not None:
+            self._emit(self._latest)
 
 
 class JsonLinesRenderer(JsonRenderer):

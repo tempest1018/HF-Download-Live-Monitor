@@ -254,3 +254,14 @@ def test_version_and_draft_first_release_contract_are_documented() -> None:
         assert required in combined
     assert "Tag creation does not publish the release publicly" in combined
     assert "PyPI promotion is optional and manual" in combined
+
+
+def test_release_trust_chain_is_documented_without_tag_owned_key() -> None:
+    manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
+    architecture = Path("docs/architecture.md").read_text(encoding="utf-8")
+    combined = "\n".join((manual, architecture))
+
+    assert "independently stored public key" in combined
+    assert "BF317715C9E7B15A750F481A5C53F25769B6CA89" in combined
+    assert "reachable from protected `main`" in combined
+    assert "public key from the release tag" not in combined

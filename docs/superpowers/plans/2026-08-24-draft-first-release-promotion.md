@@ -162,7 +162,7 @@ assert "finalize-github-release" not in jobs
 assert jobs["stage-github-release"]["needs"] == ["validate-release-assets"]
 ```
 
-Also assert `fetch-depth: 0`, `git verify-tag`, import of `SIGNING_KEY.asc`, the shared validator command, flat `python-distributions` download, `actions/attest@v4` in both build jobs, least-privilege attestation permissions, draft creation, and an explicit failure when `isDraft` is `false`. Prohibit `--draft=false`, the PyPI action, and a successful early exit for a public release.
+Also assert `fetch-depth: 0`, `git verify-tag`, the independently stored public key and pinned fingerprint, protected-main ancestry, the shared validator command, flat `python-distributions` download, `actions/attest@v4` in both build jobs, least-privilege attestation permissions, draft creation, and an explicit failure when `isDraft` is `false`. Prohibit trust in `SIGNING_KEY.asc` from the release tag, `--draft=false`, the PyPI action, and a successful early exit for a public release.
 
 - [ ] **Step 2: Run workflow tests and verify RED**
 
@@ -172,7 +172,7 @@ Expected: FAIL against the existing tag-to-PyPI workflow.
 
 - [ ] **Step 3: Add signed-tag and version gates before build**
 
-In `verify-and-build-python`, check out full history, import `SIGNING_KEY.asc` into an ephemeral `GNUPGHOME`, run `git verify-tag "$GITHUB_REF_NAME"`, and run the validator's tag/project-version check before installing or building. Ensure the temporary keyring is job-local and removed by runner teardown.
+In `verify-and-build-python`, check out full history, decode the independently stored public key into an ephemeral `GNUPGHOME`, require exactly one primary key with fingerprint `BF317715C9E7B15A750F481A5C53F25769B6CA89`, require the tag commit to be an ancestor of protected `origin/main`, run `git verify-tag "$GITHUB_REF_NAME"`, and run the validator's tag/project-version check before installing or building. Ensure the temporary keyring is job-local and removed by runner teardown.
 
 - [ ] **Step 4: Attest Python and standalone outputs**
 
@@ -250,7 +250,7 @@ concurrency:
   cancel-in-progress: false
 ```
 
-Check out `inputs.tag` with `fetch-depth: 0`, verify the tag against `SIGNING_KEY.asc`, query `isDraft`, `isPrerelease`, and `tagName`, download all assets into one directory, run the shared validator, and only then publish. Set `environment: github-release`. Fail rather than treating an already-public release as a successful publication.
+Check out `inputs.tag` with `fetch-depth: 0`, verify protected-main ancestry and the tag signature against the independently stored, fingerprint-pinned public key, query `isDraft`, `isPrerelease`, and `tagName`, download all assets into one directory, run the shared validator, and only then publish. Set `environment: github-release`. Fail rather than treating an already-public release as a successful publication.
 
 - [ ] **Step 4: Verify and commit**
 
