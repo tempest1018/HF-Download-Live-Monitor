@@ -278,6 +278,8 @@ def test_tag_release_only_stages_a_signed_validated_draft() -> None:
     validation = jobs["validate-release-assets"]
     assert validation["needs"] == ["verify-and-build-python", "standalone"]
     assert jobs["stage-github-release"]["needs"] == ["validate-release-assets"]
+    stage_environment = jobs["stage-github-release"]["steps"][1]["env"]
+    assert stage_environment["GH_REPO"] == "${{ github.repository }}"
     assert "publish-pypi" not in jobs
     assert "finalize-github-release" not in jobs
     rendered = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
