@@ -453,8 +453,8 @@ Plain text contains no cursor-control sequences and is selected automatically wh
 hf-download-live-monitor watch owner/repository --local-dir ./download --json --once > status.json
 ```
 
-`--json` writes one document for its first render. With `--once`, that first render is
-a final one-shot observation.
+`--json` writes one document for the final render available when monitoring ends. With
+`--once`, that document is a final one-shot observation.
 
 ### JSON Lines
 
@@ -533,9 +533,9 @@ exit cannot hide missing or corrupt output.
 
 ## Automation and schema compatibility
 
-`--plain` is intended for readable logs. `--json` emits the first snapshot (use
-`--once` for an explicit one-shot observation), while `--jsonl` emits successive
-snapshots using schema version 2. It separates requested and resolved
+`--plain` is intended for readable logs. `--json` emits the final snapshot when monitoring
+ends (use `--once` for an explicit one-shot observation), while `--jsonl` emits
+successive snapshots using schema version 2. It separates requested and resolved
 revisions and distinguishes verified, `complete_unverified`, and failed counts. See
 `docs/json-schema.md` for the exact contract and version 1 migration table.
 

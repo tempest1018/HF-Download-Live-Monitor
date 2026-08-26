@@ -65,9 +65,12 @@ def test_plain_renderer_has_no_ansi_and_supports_ascii() -> None:
     output.encode("ascii")
 
 
-def test_json_renderer_emits_one_document() -> None:
+def test_json_renderer_emits_one_document_on_close() -> None:
     stream = io.StringIO()
-    JsonRenderer(stream).render(sample())
+    renderer = JsonRenderer(stream)
+    renderer.render(sample())
+    assert stream.getvalue() == ""
+    renderer.close()
     assert json.loads(stream.getvalue())["schema_version"] == 2
     assert stream.getvalue().count("\n") == 1
 
@@ -77,7 +80,21 @@ def test_json_renderer_never_concatenates_documents() -> None:
     renderer = JsonRenderer(stream)
     renderer.render(sample())
     renderer.render(sample())
+    renderer.close()
     assert json.loads(stream.getvalue())["schema_version"] == 2
+    assert stream.getvalue().count("\n") == 1
+
+
+def test_json_renderer_emits_only_latest_snapshot_when_closed() -> None:
+    stream = io.StringIO()
+    renderer = JsonRenderer(stream)
+    renderer.render(replace(sample(), downloaded_bytes=1))
+    renderer.render(replace(sample(), downloaded_bytes=3))
+
+    assert stream.getvalue() == ""
+    renderer.close()
+
+    assert json.loads(stream.getvalue())["downloaded_bytes"] == 3
     assert stream.getvalue().count("\n") == 1
 
 
@@ -98,7 +115,9 @@ def test_structured_renderers_redact_error_credentials_without_mutating_error() 
     snapshot = replace(sample(), errors=(error,))
 
     stream = io.StringIO()
-    JsonRenderer(stream).render(snapshot)
+    renderer = JsonRenderer(stream)
+    renderer.render(snapshot)
+    renderer.close()
     encoded = stream.getvalue()
     data = json.loads(encoded)
 

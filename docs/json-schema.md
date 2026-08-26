@@ -1,8 +1,8 @@
 # Structured output schema
 
-`--json` emits one document for the first render. With `--once`, that render is a final
-one-shot observation. `--jsonl` emits one document per observation. Every document
-contains `"schema_version": 2`.
+`--json` emits one document for the final render when monitoring ends. With `--once`,
+that document is a final one-shot observation. `--jsonl` emits one document per
+observation. Every document contains `"schema_version": 2`.
 
 ## Version 2 example
 
@@ -73,9 +73,11 @@ fields within version 2. Do not infer integrity from byte totals alone.
 
 ## Stream semantics and confidentiality
 
-`--json` emits exactly one snapshot: the first render. With `--once`, that first render
-is also a final one-shot observation. `--jsonl` emits one complete schema-v2 JSON
-object per observation. It includes the forced final observation for the managed
+`--json` emits exactly one snapshot: the last render available when the renderer closes.
+Normal completion, dashboard `q`, and handled Ctrl+C therefore serialize the forced final
+observation. With `--once`, the only render is a final one-shot observation. `--jsonl`
+emits one complete schema-v2 JSON object per observation. It includes the forced final
+observation for the managed
 downloader stop condition, dashboard `q`, and handled Ctrl+C. Managed Ctrl+C attempts
 to stop and reap the child before that final reconciliation; the child is confirmed
 stopped and reaped when cleanup succeeds. `watch` and `attach` have no managed child
