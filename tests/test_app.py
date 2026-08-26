@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from hf_download_live_monitor.app import WatchApplication
 from hf_download_live_monitor.controls import DisplayState
 from hf_download_live_monitor.engine import ProgressEngine
@@ -66,6 +68,28 @@ def test_once_renders_one_snapshot_and_closes() -> None:
     assert app.run(DownloadSpec("owner/repo", Path("out")), once=True) == 0
     assert len(renderer.snapshots) == 1
     assert renderer.closed
+
+
+def test_close_failure_without_primary_error_is_stable_monitor_error() -> None:
+    class FailingCloseRenderer(RecordingRenderer):
+        def close(self) -> None:
+            raise RuntimeError("sensitive terminal shutdown detail")
+
+    app = WatchApplication(
+        repository=FakeRepository(),
+        observer=FakeObserver(),
+        engine=ProgressEngine(),
+        renderer=FailingCloseRenderer(),
+        clock=lambda: 5.0,
+        sleeper=lambda _: None,
+    )
+
+    with pytest.raises(MonitorError) as caught:
+        app.run(DownloadSpec("owner/repo", Path("out")), once=True)
+
+    assert caught.value.code == "resource_cleanup_failed"
+    assert caught.value.category is ErrorCategory.MONITOR
+    assert caught.value.message == "resource cleanup failed (RuntimeError)"
 
 
 def test_keyboard_interrupt_reconciles_final_snapshot_returns_cancelled_and_closes() -> None:
