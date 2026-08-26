@@ -23,7 +23,7 @@ Before platform testing begins, a validation job checks that:
 - the requested tag exists and has a valid GPG signature under `SIGNING_KEY.asc`;
 - the corresponding GitHub release is public and not a prerelease;
 - the release tag exactly equals the requested tag;
-- all 15 expected assets download into one flat directory;
+- all 15 expected assets download into an initially empty flat directory;
 - `scripts/validate_release_bundle.py` accepts the exact inventory, embedded package
   versions, adjacent checksums, and aggregate `SHA256SUMS`; and
 - GitHub artifact attestations validate for the six executables, wheel, and source archive.
@@ -31,6 +31,13 @@ Before platform testing begins, a validation job checks that:
 Failure stops the workflow before native execution. The validated complete bundle is
 uploaded as a short-lived workflow artifact for downstream jobs, avoiding inconsistent
 redownloads within one acceptance run.
+
+`scripts/validate_release_bundle.py` is the single authoritative, versioned asset
+contract. It defines six architecture-labelled executables, the adjacent `.sha256`
+sidecar for each executable, one version-matched wheel, one version-matched source
+archive, and `SHA256SUMS`: 15 files in total. The validator must reject both missing and
+unexpected files. The workflow and documentation consume this contract rather than
+maintaining a second asset manifest.
 
 ## Native executable matrix
 
@@ -52,9 +59,10 @@ The executable is exercised through `--help`, `watch --help`, `attach --help`, a
 `run --help`. A deterministic incremental-download fixture then drives the published
 binary through an end-to-end monitor run in a temporary path containing both spaces and
 Unicode. The test requires visible progress, successful final reconciliation, JSON output
-that parses without stdout contamination, and the documented success exit code. No
-Hugging Face credentials or external model download are needed in the cross-platform
-matrix.
+that parses without stdout contamination, and the documented success exit code. Progress
+and downloader diagnostics must use `stderr` or another explicitly separate channel;
+`stdout` must contain only the JSON document in JSON mode. No Hugging Face credentials or
+external model download are needed in the cross-platform matrix.
 
 ## Published wheel acceptance
 
@@ -62,11 +70,14 @@ A separate clean Python job creates a new virtual environment and installs the w
 the validated public bundle with normal dependency resolution. It must not install the
 repository package. The installed console command is exercised through the same help
 surface and a deterministic end-to-end simulated download. A package import/version check
-must report the tag version. This catches missing package data, undeclared dependencies,
-and broken console entry points.
+must report the tag version and prove that the imported module resides beneath that
+environment's `site-packages` directory. This catches missing package data, undeclared
+dependencies, broken console entry points, and accidental source-tree imports.
 
-The checkout remains available only for the fixture and acceptance assertions. The
-installed application under test always comes from the public wheel.
+The checkout remains available only for the fixture and acceptance assertions. Commands
+under test run from a fresh temporary directory outside the checkout with `PYTHONPATH`
+removed, and invoke the virtual environment's interpreter or console script by absolute
+path. The installed application under test always comes from the public wheel.
 
 ## Local Windows acceptance
 
@@ -119,11 +130,14 @@ workflow contract tests, and concise operator documentation. Tests must lock dow
 - all six exact runner/artifact pairs;
 - validation-before-execution dependencies;
 - public-release, signature, checksum, inventory, and attestation gates;
-- clean wheel installation rather than editable/source installation;
+- the shared validator as the only asset manifest, including rejection of an empty,
+  incomplete, or extra-file bundle;
+- clean wheel installation rather than editable/source installation, execution outside
+  the checkout with no `PYTHONPATH`, and a `site-packages` origin assertion;
 - deterministic simulation, Unicode/spaced paths, JSON parsing, and report upload; and
+- strict JSON-only `stdout` with progress and diagnostics separated from it; and
 - the explicit absence of PyPI publication.
 
 The full Python test suite, Ruff formatting and lint, Pyright, workflow tests, local
 published-asset tests, Docker simulation when available, and the dispatched GitHub matrix
 must pass before acceptance is reported complete.
-
