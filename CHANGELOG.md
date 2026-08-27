@@ -2,6 +2,14 @@
 
 All notable changes follow Keep a Changelog and semantic versioning.
 
+## 0.1.2 - 2026-08-27
+
+### Fixed
+
+- Restore the host library search path before a frozen Linux or AIX standalone launches
+  the external Hugging Face CLI, preventing bundled OpenSSL libraries from breaking the
+  child process on newer host runtimes.
+
 ## 0.1.1 - 2026-08-27
 
 ### Added
