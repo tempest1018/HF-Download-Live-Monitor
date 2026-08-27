@@ -270,4 +270,3 @@ Dispatch `release-acceptance.yml` with `tag=v0.1.0`. Monitor until validation, a
 - [ ] **Step 5: Final evidence report**
 
 Report the workflow URL, commit SHA, public tag/signature status, 15-asset/checksum result, eight attestations, six native outcomes, wheel isolation evidence, Windows interactive result, Docker four-run result, and any unavailable external condition. State clearly that PyPI was not touched and `v0.1.0` remained immutable.
-
