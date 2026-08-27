@@ -7,7 +7,7 @@ import sys
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from typing import Any, Protocol, TextIO
+from typing import Any, Protocol, TextIO, TypeVar
 
 from hf_download_live_monitor.layout import ViewMode
 
@@ -32,6 +32,56 @@ class DisplayState:
         if key == "q":
             return replace(self, cancel_requested=True)
         return self
+
+
+@dataclass(frozen=True, slots=True)
+class SupervisorDisplayState:
+    """Pure navigation state keyed by stable session IDs."""
+
+    view_mode: ViewMode = ViewMode.BALANCED
+    selected_session_id: str | None = None
+    show_help: bool = False
+    cancel_requested: bool = False
+    ordered_session_ids: tuple[str, ...] = ()
+
+    def reconcile(self, ordered_ids: tuple[str, ...]) -> SupervisorDisplayState:
+        if not ordered_ids:
+            return replace(self, selected_session_id=None, ordered_session_ids=())
+        if self.selected_session_id in ordered_ids:
+            return replace(self, ordered_session_ids=ordered_ids)
+        previous_index = 0
+        if self.selected_session_id in self.ordered_session_ids:
+            previous_index = self.ordered_session_ids.index(self.selected_session_id)
+        selected = ordered_ids[min(previous_index, len(ordered_ids) - 1)]
+        return replace(self, selected_session_id=selected, ordered_session_ids=ordered_ids)
+
+    def apply_key(self, key: str) -> SupervisorDisplayState:
+        key = key.lower()
+        if key in {"j", "k"} and self.ordered_session_ids:
+            selected = self.selected_session_id or self.ordered_session_ids[0]
+            index = self.ordered_session_ids.index(selected)
+            offset = 1 if key == "j" else -1
+            return replace(
+                self,
+                selected_session_id=self.ordered_session_ids[
+                    (index + offset) % len(self.ordered_session_ids)
+                ],
+            )
+        if key == "v":
+            modes = (ViewMode.COMPACT, ViewMode.BALANCED, ViewMode.DETAILED)
+            return replace(self, view_mode=modes[(modes.index(self.view_mode) + 1) % len(modes)])
+        if key == "?":
+            return replace(self, show_help=not self.show_help)
+        if key == "q":
+            return replace(self, cancel_requested=True)
+        return self
+
+
+class _KeyState(Protocol):
+    def apply_key(self, key: str) -> Any: ...
+
+
+_StateT = TypeVar("_StateT", bound=_KeyState)
 
 
 class KeyboardController:
@@ -62,7 +112,7 @@ class KeyboardController:
             self._enabled = False
             self._read_key = lambda: None
 
-    def poll(self, state: DisplayState) -> DisplayState:
+    def poll(self, state: _StateT) -> _StateT:
         if not self._enabled or self._closed:
             return state
         try:

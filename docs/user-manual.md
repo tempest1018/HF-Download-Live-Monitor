@@ -328,13 +328,38 @@ To take one snapshot of every discovered download:
 hf-download-live-monitor attach --all --once --jsonl
 ```
 
-`--pid` and `--all` cannot be used together. Continuous multi-download `--all` output is deliberately rejected; use `--all --once`.
+To continuously discover and monitor all downloads:
+
+```console
+hf-download-live-monitor attach --all
+hf-download-live-monitor attach --all --plain
+hf-download-live-monitor attach --all --jsonl
+hf-download-live-monitor attach --all --json
+```
+
+`--pid` and `--all` cannot be used together. `--discovery-refresh` controls the base
+discovery interval (default `1.0` second), `--retention` controls how long final sessions
+remain visible (default `15.0` seconds), and `--max-sessions` bounds concurrently tracked
+sessions (default `32`). Empty discovery backs off to reduce polling cost.
+
+The supervisor lifecycle is `discovered`, `preparing`, `active`, `finalizing`, then
+`completed`, `failed`, or `lost`. `lost` means the process disappeared without enough
+evidence to prove completion or an integrity failure. JSONL writes versioned
+`supervisor_event` objects with strictly increasing sequence numbers; rate limiting can
+create sequence gaps. Final JSON buffers the latest aggregate state and writes exactly
+one `supervisor_snapshot` when the monitor closes.
+
+In the interactive dashboard, `j`/`k` changes the selected repository, `v` changes
+density, `?` toggles help, and `q` exits. `q` and Ctrl+C stop only this monitor: continuous
+attachment does not terminate, pause, throttle, or otherwise control downloader
+processes. Persistent history, scheduling, non-Hugging-Face backends, and remote process
+discovery are outside this mode's current scope.
 
 Attachment support:
 
 - Native Windows: process command lines are discovered through Windows management APIs; working directories use `psutil`.
 - WSL and Linux: processes are discovered through `/proc`.
-- macOS: automatic attachment is not supported because `/proc` is unavailable; use `watch` or `run`.
+- macOS: process discovery uses `psutil`, as on Windows and Linux.
 - Restricted containers or accounts may not permit inspection of other processes; use `watch` or `run`.
 
 Relative local-directory values from the discovered downloader are resolved against

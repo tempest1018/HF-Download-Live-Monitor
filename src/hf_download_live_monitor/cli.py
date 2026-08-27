@@ -11,7 +11,11 @@ from rich.console import Console
 
 from hf_download_live_monitor.app import WatchApplication
 from hf_download_live_monitor.attach import discover_downloads, select_download
-from hf_download_live_monitor.controls import DisplayState, KeyboardController
+from hf_download_live_monitor.controls import (
+    DisplayState,
+    KeyboardController,
+    SupervisorDisplayState,
+)
 from hf_download_live_monitor.engine import ProgressEngine
 from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
 from hf_download_live_monitor.filesystem import FileSystemObserver
@@ -28,6 +32,13 @@ from hf_download_live_monitor.renderers import (
 from hf_download_live_monitor.repository import HubRepository
 from hf_download_live_monitor.runner import ManagedDownload
 from hf_download_live_monitor.security import redact_text
+from hf_download_live_monitor.supervisor import DownloadSupervisor
+from hf_download_live_monitor.supervisor_renderers import (
+    SupervisorJsonLinesRenderer,
+    SupervisorJsonRenderer,
+    SupervisorPlainRenderer,
+    SupervisorRichRenderer,
+)
 
 cli = typer.Typer(no_args_is_help=True, help="Monitor Hugging Face downloads.")
 
@@ -51,19 +62,35 @@ def attach(
     ascii_only: bool = typer.Option(False, "--ascii"),
     view: ViewMode = typer.Option(ViewMode.BALANCED, "--view"),
     reduced_motion: bool = typer.Option(False, "--reduced-motion"),
+    discovery_refresh: float = typer.Option(1.0, "--discovery-refresh", min=0.01),
+    retention: float = typer.Option(15.0, "--retention", min=0.0),
+    max_sessions: int = typer.Option(32, "--max-sessions", min=1),
 ) -> None:
     """Attach to an active Hugging Face download."""
     if pid is not None and all_downloads:
         raise typer.BadParameter("--pid and --all cannot be used together")
     _validate_outputs(plain, json_output, jsonl)
     try:
+        if all_downloads and not once:
+            code = _make_supervisor(
+                refresh=refresh,
+                rate_window=rate_window,
+                discovery_refresh=discovery_refresh,
+                retention=retention,
+                max_sessions=max_sessions,
+                plain=plain,
+                json_output=json_output,
+                jsonl=jsonl,
+                no_color=no_color,
+                ascii_only=ascii_only,
+                view=view,
+                reduced_motion=reduced_motion,
+            ).run()
+            if code:
+                raise typer.Exit(code=code)
+            return
         candidates = discover_downloads(system_process_provider())
         if all_downloads:
-            if not once and len(candidates) > 1:
-                raise MonitorError(
-                    "all_requires_once",
-                    "continuous --all display is not yet safe; use --all --once",
-                )
             selected = candidates
         else:
             selected = (select_download(candidates, pid=pid, interactive=sys.stdin.isatty()),)
@@ -266,6 +293,52 @@ def _make_application(
         refresh=refresh,
         controls=controls,
         display_state=DisplayState(view_mode=view),
+    )
+
+
+def _make_supervisor(
+    *,
+    refresh: float,
+    rate_window: float,
+    discovery_refresh: float,
+    retention: float,
+    max_sessions: int,
+    plain: bool,
+    json_output: bool,
+    jsonl: bool,
+    no_color: bool,
+    ascii_only: bool,
+    view: ViewMode,
+    reduced_motion: bool,
+) -> DownloadSupervisor:
+    state = SupervisorDisplayState(view_mode=view)
+    if json_output:
+        renderer = SupervisorJsonRenderer()
+    elif jsonl:
+        renderer = SupervisorJsonLinesRenderer()
+    elif plain or not sys.stdout.isatty():
+        renderer = SupervisorPlainRenderer()
+    else:
+        renderer = SupervisorRichRenderer(
+            Console(no_color=no_color),
+            display_state=state,
+            ascii_only=ascii_only,
+            reduced_motion=reduced_motion,
+        )
+    controls = KeyboardController() if isinstance(renderer, SupervisorRichRenderer) else None
+    provider = system_process_provider()
+    return DownloadSupervisor(
+        lambda: discover_downloads(provider),
+        discovery_refresh=discovery_refresh,
+        retention=retention,
+        max_sessions=max_sessions,
+        repository=HubRepository(),
+        observer=FileSystemObserver(),
+        engine_factory=lambda: ProgressEngine(rate_window=rate_window),
+        refresh=refresh,
+        renderer=renderer,
+        controls=controls,
+        display_state=state,
     )
 
 

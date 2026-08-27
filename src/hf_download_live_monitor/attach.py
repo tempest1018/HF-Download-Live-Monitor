@@ -7,13 +7,36 @@ from dataclasses import dataclass
 
 from hf_download_live_monitor.hf_command import parse_download_process
 from hf_download_live_monitor.models import DownloadSpec, MonitorError
-from hf_download_live_monitor.processes import ProcessProvider
+from hf_download_live_monitor.processes import ProcessIdentity, ProcessProvider
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class SessionKey:
+    repo_type: str
+    repo: str
+    local_dir: str
+    revision: str
+    process: ProcessIdentity
 
 
 @dataclass(frozen=True, slots=True)
 class DownloadCandidate:
-    pid: int
+    process: ProcessIdentity
     spec: DownloadSpec
+
+    @property
+    def pid(self) -> int:
+        return self.process.pid
+
+    @property
+    def key(self) -> SessionKey:
+        return SessionKey(
+            self.spec.repo_type.value,
+            self.spec.repo,
+            str(self.spec.local_dir.resolve(strict=False)),
+            self.spec.revision,
+            self.process,
+        )
 
 
 def discover_downloads(provider: ProcessProvider) -> tuple[DownloadCandidate, ...]:
@@ -21,8 +44,8 @@ def discover_downloads(provider: ProcessProvider) -> tuple[DownloadCandidate, ..
     for process in provider.discover():
         spec = parse_download_process(process)
         if spec is not None:
-            candidates.append(DownloadCandidate(process.pid, spec))
-    return tuple(sorted(candidates, key=lambda item: item.pid))
+            candidates.append(DownloadCandidate(process.identity, spec))
+    return tuple(sorted(candidates, key=lambda item: item.key))
 
 
 def select_download(

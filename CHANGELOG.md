@@ -2,6 +2,14 @@
 
 All notable changes follow Keep a Changelog and semantic versioning.
 
+## Unreleased
+
+### Added
+
+- Continuously discover and monitor concurrent Hugging Face downloads with
+  `attach --all`, an adaptive aggregate dashboard, privacy-safe structured events,
+  bounded workers, stable process identities, and Linux published-artifact acceptance.
+
 ## 0.1.2 - 2026-08-27
 
 ### Fixed
