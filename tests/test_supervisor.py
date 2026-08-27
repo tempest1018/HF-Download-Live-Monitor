@@ -1,3 +1,4 @@
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import Future
@@ -340,3 +341,32 @@ def test_shutdown_does_not_wait_forever_for_stuck_session_work() -> None:
     assert time.monotonic() - started < 0.5
     assert supervisor.snapshot.sessions[0].lifecycle is SessionLifecycle.LOST
     assert executor.shutdown_calls == [(False, True)]
+
+
+def test_shutdown_bounds_engine_close_and_avoids_inflight_close_race() -> None:
+    close_started = threading.Event()
+    release_close = threading.Event()
+
+    class BlockingCloseEngine(ProgressEngine):
+        def close(self) -> None:
+            close_started.set()
+            release_close.wait(timeout=2)
+            super().close()
+
+    executor = ImmediateExecutor()
+    supervisor = DownloadSupervisor(
+        SequenceDiscovery(((candidate(),), (candidate(),))),
+        repository=FakeRepository(),
+        observer=FakeObserver(),
+        engine_factory=BlockingCloseEngine,
+        executor=executor,
+        shutdown_timeout=0.01,
+    )
+    supervisor.tick()
+    supervisor.tick()
+    started = time.monotonic()
+    supervisor.shutdown()
+    assert time.monotonic() - started < 0.5
+    assert close_started.is_set()
+    assert executor.shutdown_calls == [(False, True)]
+    release_close.set()

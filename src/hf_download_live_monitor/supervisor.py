@@ -465,12 +465,11 @@ class DownloadSupervisor:
                 self._renderer.render_snapshot(self._snapshot)
         except BaseException as exc:
             close_error = exc
-        for runtime in self._sessions.values():
-            if runtime.engine is not None:
-                try:
-                    runtime.engine.close()
-                except BaseException as exc:
-                    close_error = close_error or exc
+        engine_errors: list[BaseException] = []
+        if not self._close_engines(deadline, engine_errors):
+            all_work_stopped = False
+        if engine_errors:
+            close_error = close_error or engine_errors[0]
         if self._executor is not None:
             try:
                 self._executor.shutdown(
@@ -494,6 +493,49 @@ class DownloadSupervisor:
                 "supervisor_shutdown_failed",
                 f"supervisor shutdown failed ({type(close_error).__name__})",
             ) from None
+
+    def _close_engines(
+        self,
+        deadline: float,
+        errors: list[BaseException],
+    ) -> bool:
+        all_closed = True
+        closers: list[threading.Thread] = []
+        for runtime in self._sessions.values():
+            engine = runtime.engine
+            if engine is None:
+                continue
+            runtime.engine = None
+            future = runtime.future
+            if future is not None and not future.done():
+                all_closed = False
+                future.add_done_callback(
+                    lambda _future, active_engine=engine: self._start_engine_close(
+                        active_engine, errors
+                    )
+                )
+                continue
+            closers.append(self._start_engine_close(engine, errors))
+        for closer in closers:
+            closer.join(timeout=max(0.0, deadline - time.monotonic()))
+            if closer.is_alive():
+                all_closed = False
+        return all_closed
+
+    @staticmethod
+    def _start_engine_close(
+        engine: ProgressEngine,
+        errors: list[BaseException],
+    ) -> threading.Thread:
+        def close() -> None:
+            try:
+                engine.close()
+            except BaseException as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=close, name="hf-supervisor-close", daemon=True)
+        thread.start()
+        return thread
 
     def _wait_for_session_work(self, deadline: float) -> bool:
         all_stopped = True
