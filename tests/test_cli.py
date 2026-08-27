@@ -86,6 +86,37 @@ def test_attach_help_exposes_pid_and_once() -> None:
     assert "--pid" in _plain(result.stdout)
     assert "--once" in _plain(result.stdout)
     assert "--view" in _plain(result.stdout)
+    assert "--discovery-refresh" in _plain(result.stdout)
+    assert "--retention" in _plain(result.stdout)
+    assert "--max-sessions" in _plain(result.stdout)
+
+
+def test_continuous_attach_all_routes_to_supervisor(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Supervisor:
+        runs = 0
+
+        def run(self) -> int:
+            self.runs += 1
+            return 0
+
+    supervisor = Supervisor()
+    monkeypatch.setattr(cli_module, "_make_supervisor", lambda **_: supervisor)
+    result = runner.invoke(cli, ["attach", "--all", "--jsonl"])
+    assert result.exit_code == 0
+    assert supervisor.runs == 1
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--discovery-refresh", "0"],
+        ["--retention", "-1"],
+        ["--max-sessions", "0"],
+    ],
+)
+def test_attach_all_validates_supervisor_limits(arguments: list[str]) -> None:
+    result = runner.invoke(cli, ["attach", "--all", *arguments])
+    assert result.exit_code == 2
 
 
 def test_run_help_exposes_download_options() -> None:

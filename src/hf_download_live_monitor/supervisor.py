@@ -5,14 +5,17 @@ from __future__ import annotations
 import hashlib
 import time
 import uuid
+from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Literal, Protocol, cast
 
 from hf_download_live_monitor.app import Observer, Repository
 from hf_download_live_monitor.attach import DownloadCandidate, SessionKey
+from hf_download_live_monitor.controls import SupervisorDisplayState
 from hf_download_live_monitor.engine import ProgressEngine
+from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
 from hf_download_live_monitor.models import DownloadPlan, MonitorError, ProgressSnapshot
 from hf_download_live_monitor.supervisor_models import (
     DiscoveryHealth,
@@ -22,6 +25,20 @@ from hf_download_live_monitor.supervisor_models import (
     SupervisorEvent,
     SupervisorSnapshot,
 )
+
+
+class SupervisorRenderer(Protocol):
+    def render_snapshot(self, snapshot: SupervisorSnapshot) -> None: ...
+
+    def render_event(self, event: SupervisorEvent) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class SupervisorControls(Protocol):
+    def poll(self, state: SupervisorDisplayState) -> SupervisorDisplayState: ...
+
+    def close(self) -> None: ...
 
 
 @dataclass(slots=True)
@@ -68,6 +85,10 @@ class DownloadSupervisor:
         engine_factory: Callable[[], ProgressEngine] | None = None,
         executor: Executor | None = None,
         refresh: float = 0.25,
+        renderer: SupervisorRenderer | None = None,
+        controls: SupervisorControls | None = None,
+        display_state: SupervisorDisplayState | None = None,
+        sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         if discovery_refresh <= 0:
             raise ValueError("discovery refresh must be positive")
@@ -94,15 +115,20 @@ class DownloadSupervisor:
         if repository is not None and self._executor is None:
             self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="hf-supervisor")
         self._refresh = refresh
+        self._renderer = renderer
+        self._controls = controls
+        self._display_state = display_state or SupervisorDisplayState()
+        self._sleeper = sleeper
         self._run_id = run_id or str(uuid.uuid4())
         self._sessions: dict[SessionKey, _SessionRuntime] = {}
-        self._events: list[SupervisorEvent] = []
+        self._events: deque[SupervisorEvent] = deque(maxlen=4096)
         self._sequence = 0
         self._discovery_health = DiscoveryHealth.HEALTHY
         self._warning_active = False
         self._next_discovery = float("-inf")
         self._idle_interval = discovery_refresh
         self._snapshot = SupervisorSnapshot.build(clock(), ())
+        self._closed = False
 
     @property
     def snapshot(self) -> SupervisorSnapshot:
@@ -111,6 +137,35 @@ class DownloadSupervisor:
     @property
     def events(self) -> tuple[SupervisorEvent, ...]:
         return tuple(self._events)
+
+    def drain_events(self) -> tuple[SupervisorEvent, ...]:
+        events = tuple(self._events)
+        self._events.clear()
+        return events
+
+    def run(self) -> int:
+        """Run until the operator cancels; attached child processes are never signalled."""
+        try:
+            while True:
+                snapshot = self.tick()
+                if self._renderer is not None:
+                    for event in self.drain_events():
+                        self._renderer.render_event(event)
+                    self._renderer.render_snapshot(snapshot)
+                if self._controls is not None:
+                    ids = tuple(item.session_id for item in snapshot.sessions)
+                    self._display_state = self._display_state.reconcile(ids)
+                    self._display_state = self._controls.poll(self._display_state)
+                    update = getattr(self._renderer, "update_display_state", None)
+                    if callable(update):
+                        update(self._display_state)
+                    if self._display_state.cancel_requested:
+                        return exit_code_for(ErrorCategory.CANCELLED)
+                self._sleeper(self._refresh)
+        except KeyboardInterrupt:
+            return exit_code_for(ErrorCategory.CANCELLED)
+        finally:
+            self.shutdown()
 
     def tick(self) -> SupervisorSnapshot:
         now = self._clock()
@@ -295,11 +350,25 @@ class DownloadSupervisor:
         )
 
     def shutdown(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        now = self._clock()
+        self._emit(EventType.SUPERVISOR_STOPPED, None, now)
+        self._refresh_snapshot(now)
+        if self._renderer is not None:
+            for event in self.drain_events():
+                self._renderer.render_event(event)
+            self._renderer.render_snapshot(self._snapshot)
         for runtime in self._sessions.values():
             if runtime.engine is not None:
                 runtime.engine.close()
         if self._executor is not None:
             self._executor.shutdown(wait=True, cancel_futures=True)
+        if self._controls is not None:
+            self._controls.close()
+        if self._renderer is not None:
+            self._renderer.close()
 
 
 def _session_id(key: SessionKey) -> str:
