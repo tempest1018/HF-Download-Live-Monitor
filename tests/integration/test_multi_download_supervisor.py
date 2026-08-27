@@ -29,16 +29,35 @@ class FixtureRepository:
         raise AssertionError("prepare supplies the manifest")
 
 
-def _child(destination: Path, content: bytes, delay: float) -> subprocess.Popen[bytes]:
+def _child(
+    destination: Path,
+    content: bytes,
+    delay: float,
+    ready: Path,
+    proceed: Path,
+) -> subprocess.Popen[bytes]:
     source = destination.parent / f"{destination.name}-source.bin"
     source.write_bytes(content)
-    script = (
-        "import pathlib,sys,time; "
-        "p=pathlib.Path(sys.argv[sys.argv.index('--local-dir')+1]); "
-        "p.mkdir(parents=True,exist_ok=True); f=(p/'model.bin').open('wb'); "
-        "data=pathlib.Path(sys.argv[1]).read_bytes(); delay=float(sys.argv[2]); "
-        "[(f.write(data[i:i+512]),f.flush(),time.sleep(delay)) "
-        "for i in range(0,len(data),512)]; f.close()"
+    script = "\n".join(
+        (
+            "import pathlib, sys, time",
+            "p = pathlib.Path(sys.argv[sys.argv.index('--local-dir') + 1])",
+            "p.mkdir(parents=True, exist_ok=True)",
+            "data = pathlib.Path(sys.argv[1]).read_bytes()",
+            "delay = float(sys.argv[2])",
+            "ready = pathlib.Path(sys.argv[3])",
+            "proceed = pathlib.Path(sys.argv[4])",
+            "ready.touch()",
+            "deadline = time.monotonic() + 10",
+            "while not proceed.exists() and time.monotonic() < deadline:",
+            "    time.sleep(0.01)",
+            "assert proceed.exists(), 'monitor handshake timed out'",
+            "with (p / 'model.bin').open('wb') as handle:",
+            "    for offset in range(0, len(data), 512):",
+            "        handle.write(data[offset:offset + 512])",
+            "        handle.flush()",
+            "        time.sleep(delay)",
+        )
     )
     return subprocess.Popen(
         [
@@ -47,6 +66,8 @@ def _child(destination: Path, content: bytes, delay: float) -> subprocess.Popen[
             script,
             str(source),
             str(delay),
+            str(ready),
+            str(proceed),
             "hf",
             "download",
             destination.name,
@@ -80,13 +101,36 @@ def test_real_concurrent_processes_are_reconciled_and_finalized(tmp_path: Path) 
         refresh=0.005,
     )
     supervisor.tick()  # The monitor is live before either child appears.
+    ready = (tmp_path / "good-ready", tmp_path / "bad-ready")
+    proceed = (tmp_path / "good-proceed", tmp_path / "bad-proceed")
     children = (
-        _child(tmp_path / "good", expected["good"], 0.002),
-        _child(tmp_path / "bad", b"corrupt model" * 8192, 0.0005),
+        _child(tmp_path / "good", expected["good"], 0.002, ready[0], proceed[0]),
+        _child(
+            tmp_path / "bad",
+            b"corrupt model" * 8192,
+            0.0005,
+            ready[1],
+            proceed[1],
+        ),
     )
     tracked_pids.update(child.pid for child in children)
     try:
-        deadline = time.monotonic() + 15
+        ready_deadline = time.monotonic() + 5
+        while time.monotonic() < ready_deadline and not all(path.exists() for path in ready):
+            time.sleep(0.01)
+        assert all(path.exists() for path in ready)
+        discovery_deadline = time.monotonic() + 5
+        while time.monotonic() < discovery_deadline:
+            supervisor.tick()
+            if len(supervisor.snapshot.sessions) == 2:
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("supervisor did not discover both waiting child processes")
+        for path in proceed:
+            path.touch()
+
+        deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             supervisor.tick()
             finals = [
@@ -110,6 +154,8 @@ def test_real_concurrent_processes_are_reconciled_and_finalized(tmp_path: Path) 
         sequences = [item.sequence for item in supervisor.events]
         assert sequences == list(range(1, len(sequences) + 1))
     finally:
+        for path in proceed:
+            path.touch(exist_ok=True)
         for child in children:
             child.wait(timeout=5)
         supervisor.shutdown()
