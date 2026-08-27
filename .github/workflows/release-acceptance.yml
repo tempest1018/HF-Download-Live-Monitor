@@ -32,10 +32,11 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-          printf '%s' '${{ vars.RELEASE_SIGNING_KEY_B64 }}' | base64 --decode > "$RUNNER_TEMP/release-signing-key.asc"
-          actual_fingerprint="$(gpg --show-keys --with-colons "$RUNNER_TEMP/release-signing-key.asc" | awk -F: '$1 == "fpr" { print $10 }')"
-          test "$actual_fingerprint" = "$EXPECTED_FINGERPRINT"
-          gpg --batch --import "$RUNNER_TEMP/release-signing-key.asc"
+          key_file="$RUNNER_TEMP/release-signing-key.asc"
+          printf '%s' '${{ vars.RELEASE_SIGNING_KEY_B64 }}' | base64 --decode > "$key_file"
+          test "$(gpg --show-keys --with-colons "$key_file" | awk -F: '$1 == "pub" { count++ } END { print count + 0 }')" = "1"
+          test "$(gpg --show-keys --with-colons "$key_file" | awk -F: '$1 == "fpr" { print $10; exit }')" = "$EXPECTED_FINGERPRINT"
+          gpg --batch --import "$key_file"
           git verify-tag "$TAG"
           git fetch --no-tags origin main:refs/remotes/origin/main
           git merge-base --is-ancestor "$TAG^{commit}" refs/remotes/origin/main
