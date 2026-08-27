@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from hf_download_live_monitor.attach import discover_downloads, select_download
+from hf_download_live_monitor.attach import SessionKey, discover_downloads, select_download
 from hf_download_live_monitor.models import MonitorError
 from hf_download_live_monitor.processes import ProcessRecord
 
@@ -15,8 +15,13 @@ class FakeProvider:
         return self.records
 
 
-def download(pid: int, repo: str) -> ProcessRecord:
-    return ProcessRecord(pid, ("hf", "download", repo, "--local-dir", f"out-{pid}"), Path.cwd())
+def download(pid: int, repo: str, start_token: str = "unknown") -> ProcessRecord:
+    return ProcessRecord(
+        pid,
+        ("hf", "download", repo, "--local-dir", f"out-{pid}"),
+        Path.cwd(),
+        start_token,
+    )
 
 
 def test_discover_downloads_filters_and_sorts() -> None:
@@ -28,6 +33,44 @@ def test_discover_downloads_filters_and_sorts() -> None:
         )
     )
     assert [item.pid for item in discover_downloads(provider)] == [3, 9]
+
+
+def test_discover_downloads_orders_by_stable_session_key() -> None:
+    candidates = discover_downloads(
+        FakeProvider((download(3, "z/repo", "2"), download(9, "a/repo", "1")))
+    )
+
+    assert [item.spec.repo for item in candidates] == ["a/repo", "z/repo"]
+    assert candidates[0].key == SessionKey(
+        "model",
+        "a/repo",
+        str(candidates[0].spec.local_dir),
+        "main",
+        candidates[0].process,
+    )
+
+
+def test_discovery_discards_raw_arguments_and_tokens() -> None:
+    record = ProcessRecord(
+        7,
+        (
+            "hf",
+            "download",
+            "owner/repo",
+            "--local-dir",
+            "out",
+            "--token",
+            "hf_secret",
+        ),
+        Path.cwd(),
+        "100",
+    )
+
+    candidate = discover_downloads(FakeProvider((record,)))[0]
+
+    assert not hasattr(candidate, "args")
+    assert "hf_secret" not in repr(candidate)
+    assert candidate.process.pid == 7
 
 
 def test_select_download_automatically_uses_single_match() -> None:
