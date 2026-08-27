@@ -86,12 +86,14 @@ class PsutilProcessProvider:
         records: list[ProcessRecord] = []
         for process in self._iterator():
             try:
-                records.append(ProcessRecord(
-                    process.pid,
-                    tuple(process.cmdline()),
-                    Path(process.cwd()),
-                    f"{process.create_time():.9f}",
-                ))
+                records.append(
+                    ProcessRecord(
+                        process.pid,
+                        tuple(process.cmdline()),
+                        Path(process.cwd()),
+                        f"{process.create_time():.9f}",
+                    )
+                )
             except (OSError, ValueError, psutil.Error):
                 continue
         return tuple(sorted(records, key=lambda item: item.identity))
@@ -272,9 +274,11 @@ def test_finalized_session_is_removed_only_after_retention() -> None:
     clock = FakeClock()
     supervisor = make_supervisor(clock=clock, retention=15.0)
     supervisor.add_final(completed_session())
-    clock.advance(14.9); supervisor.tick()
+    clock.advance(14.9)
+    supervisor.tick()
     assert len(supervisor.snapshot.sessions) == 1
-    clock.advance(0.1); supervisor.tick()
+    clock.advance(0.1)
+    supervisor.tick()
     assert supervisor.snapshot.sessions == ()
 ```
 
@@ -328,8 +332,10 @@ failure, insufficient-evidence `lost`, and cancellation that never signals child
 ```python
 def test_disappeared_process_is_forced_to_final_state() -> None:
     supervisor = make_supervisor(provider=SequenceProvider(((candidate(),), ())))
-    supervisor.tick(); supervisor.complete_preparation(plan())
-    supervisor.tick(); supervisor.complete_observation(verified_snapshot(), final=True)
+    supervisor.tick()
+    supervisor.complete_preparation(plan())
+    supervisor.tick()
+    supervisor.complete_observation(verified_snapshot(), final=True)
     assert supervisor.snapshot.sessions[0].lifecycle is SessionLifecycle.COMPLETED
 
 
@@ -386,8 +392,11 @@ def test_jsonl_sequences_lifecycle_and_never_suppresses_final_event() -> None:
 
 
 def test_final_json_writes_exactly_one_document_on_close() -> None:
-    stream = StringIO(); renderer = SupervisorJsonRenderer(stream)
-    renderer.render(snapshot()); renderer.render(newer_snapshot()); renderer.close()
+    stream = StringIO()
+    renderer = SupervisorJsonRenderer(stream)
+    renderer.render(snapshot())
+    renderer.render(newer_snapshot())
+    renderer.close()
     assert json.loads(stream.getvalue())["kind"] == "supervisor_snapshot"
 ```
 

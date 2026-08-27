@@ -189,9 +189,7 @@ def test_supervisor_selection_is_stable_and_wraps() -> None:
 
 
 def test_supervisor_selection_survives_reordering_and_uses_nearest_after_removal() -> None:
-    state = SupervisorDisplayState(selected_session_id="beta").reconcile(
-        ("alpha", "beta", "gamma")
-    )
+    state = SupervisorDisplayState(selected_session_id="beta").reconcile(("alpha", "beta", "gamma"))
     assert state.reconcile(("gamma", "beta", "alpha")).selected_session_id == "beta"
     assert state.reconcile(("alpha", "gamma")).selected_session_id == "gamma"
 

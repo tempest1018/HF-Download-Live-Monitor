@@ -15,6 +15,20 @@ outside the refresh path and caches results by file identity. Renderers consume
 immutable snapshots and provide Adaptive Focus, plain text, schema-v2 JSON, or JSON
 Lines. Pure layout policy selects narrow, normal, or wide composition.
 
+Continuous `attach --all` adds a `DownloadSupervisor` above those per-repository
+components. A `psutil` provider supplies `(PID, process start token)` identities so PID
+reuse cannot merge sessions. Discovery reconciliation, a four-worker preparation and
+finalization pool, one progress engine per session, bounded session count, idle backoff,
+and timed retention keep resource use predictable. Immutable `SupervisorSnapshot`
+values feed the adaptive aggregate renderer; versioned `supervisor_event` values feed
+JSONL, while final JSON emits one last aggregate document.
+
+Sessions move through `discovered`, `preparing`, `active`, and `finalizing` before a
+terminal `completed`, `failed`, or `lost` state. Process disappearance triggers a forced
+final observation. Integrity evidence determines completed or failed; insufficient
+evidence produces lost. Operator cancellation closes supervisor-owned workers,
+controls, and renderers but does not terminate attached downloaders.
+
 ## Lifecycle and fallbacks
 
 `WatchApplication` prepares a plan, observes and renders repeatedly, and polls optional
@@ -36,8 +50,8 @@ key-reading failures disable
 interaction without changing monitoring correctness; plain and structured renderers
 do not initialize controls.
 
-`processes.py` emits normalized process records from POSIX `/proc` or Windows CIM plus
-`psutil` working-directory resolution. `hf_command.py` accepts documented download
+`processes.py` emits normalized process records through `psutil` on Windows, Linux, and
+macOS, with native providers retained as fallbacks. `hf_command.py` accepts documented download
 arguments without retaining credentials, and `attach.py` selects deterministically.
 `runner.py` launches the official CLI without a shell using the resolved commit SHA and
 owns terminate, kill, wait, and reap behavior on every exit path. Child exit triggers

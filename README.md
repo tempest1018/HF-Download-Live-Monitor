@@ -54,10 +54,19 @@ On Windows, WSL, and Linux, discover a running CLI download automatically:
 ```console
 hf-download-live-monitor attach
 hf-download-live-monitor attach --pid 1234
+hf-download-live-monitor attach --all
 hf-download-live-monitor attach --all --once --jsonl
 ```
 
-When several downloads are visible, an interactive terminal offers a numbered selection. Non-interactive callers must use `--pid`. Continuous multi-download rendering is deliberately rejected; use `--all --once` for an atomic snapshot.
+When several downloads are visible, an interactive terminal offers a numbered selection.
+Non-interactive callers can use `--pid`, or continuously supervise every visible download
+with `attach --all`. The aggregate dashboard follows newly started downloads and retains
+final results briefly. Pressing `q` or Ctrl+C stops only the monitor; it does not terminate
+attached downloader processes.
+
+For automation, `--jsonl` emits versioned `supervisor_event` objects and `--json` emits
+one final aggregate snapshot. Tune discovery with `--discovery-refresh`, completed-result
+visibility with `--retention`, and resource bounds with `--max-sessions`.
 
 ## Launch and monitor
 

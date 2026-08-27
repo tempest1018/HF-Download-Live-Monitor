@@ -18,4 +18,4 @@ RUN python -m pip install --no-cache-dir --no-deps -e .
 COPY tests/fixtures/ tests/fixtures/
 COPY tests/integration/ tests/integration/
 COPY scripts/run_container_simulation.py scripts/run_container_simulation.py
-CMD ["python", "scripts/run_container_simulation.py", "--repeat", "4"]
+CMD ["sh", "-c", "python scripts/run_container_simulation.py --repeat 4 && python -m pytest tests/integration/test_multi_download_supervisor.py -q"]

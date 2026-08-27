@@ -57,6 +57,7 @@ def test_dockerfile_caches_dependencies_before_copying_source() -> None:
 
     assert dependency_install < source_copy < project_install
     assert "--no-build-isolation" not in dockerfile
+    assert "test_multi_download_supervisor.py" in dockerfile
 
 
 def _plan(destination: Path, content: bytes) -> DownloadPlan:

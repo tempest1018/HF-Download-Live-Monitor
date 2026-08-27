@@ -67,9 +67,7 @@ def test_real_concurrent_processes_are_reconciled_and_finalized(tmp_path: Path) 
 
     def discover():
         return tuple(
-            item
-            for item in discover_downloads(PsutilProcessProvider())
-            if item.pid in tracked_pids
+            item for item in discover_downloads(PsutilProcessProvider()) if item.pid in tracked_pids
         )
 
     supervisor = DownloadSupervisor(

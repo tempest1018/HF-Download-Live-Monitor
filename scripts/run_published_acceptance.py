@@ -138,9 +138,7 @@ class HubFixture:
             if include_body:
                 handler.wfile.write(body)
             return
-        valid_paths = {
-            f"/acceptance/tiny/resolve/{REVISION}/{name}" for name in self.files
-        }
+        valid_paths = {f"/acceptance/tiny/resolve/{REVISION}/{name}" for name in self.files}
         if request.path not in valid_paths or not set(query) <= {"download"} or selected is None:
             handler.send_error(404)
             return

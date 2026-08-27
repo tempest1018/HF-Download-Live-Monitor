@@ -291,3 +291,22 @@ def test_release_acceptance_operator_contract_is_documented() -> None:
         "does not publish to PyPI",
     ):
         assert required in manual
+
+
+def test_continuous_attach_all_contract_is_documented() -> None:
+    text = "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in ("README.md", "docs/user-manual.md", "docs/architecture.md")
+    )
+    for value in (
+        "attach --all",
+        "--discovery-refresh",
+        "--retention",
+        "--max-sessions",
+        "supervisor_event",
+        "does not terminate",
+        "discovered",
+        "finalizing",
+        "lost",
+    ):
+        assert value in text
