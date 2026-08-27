@@ -265,3 +265,27 @@ def test_release_trust_chain_is_documented_without_tag_owned_key() -> None:
     assert "BF317715C9E7B15A750F481A5C53F25769B6CA89" in combined
     assert "reachable from protected `main`" in combined
     assert "public key from the release tag" not in combined
+
+
+def test_release_acceptance_operator_contract_is_documented() -> None:
+    manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
+    for required in (
+        "Release Acceptance",
+        "release-acceptance.yml",
+        "-f tag=v0.1.0",
+        "Windows x86_64",
+        "Windows ARM64",
+        "Linux x86_64",
+        "Linux ARM64",
+        "macOS x86_64",
+        "macOS ARM64",
+        "public release assets",
+        "JSON stdout",
+        "progress stderr",
+        "PYTHONPATH",
+        "site-packages",
+        "acceptance-wheel",
+        "v0.1.1",
+        "does not publish to PyPI",
+    ):
+        assert required in manual

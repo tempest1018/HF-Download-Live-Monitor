@@ -1,0 +1,193 @@
+name: Release Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Stable public release tag to validate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  attestations: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+      EXPECTED_FINGERPRINT: BF317715C9E7B15A750F481A5C53F25769B6CA89
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Verify stable signed tag and protected ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          printf '%s' '${{ vars.RELEASE_SIGNING_KEY_B64 }}' | base64 --decode > "$RUNNER_TEMP/release-signing-key.asc"
+          actual_fingerprint="$(gpg --show-keys --with-colons "$RUNNER_TEMP/release-signing-key.asc" | awk -F: '$1 == "fpr" { print $10 }')"
+          test "$actual_fingerprint" = "$EXPECTED_FINGERPRINT"
+          gpg --batch --import "$RUNNER_TEMP/release-signing-key.asc"
+          git verify-tag "$TAG"
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$TAG^{commit}" refs/remotes/origin/main
+      - name: Confirm public immutable release
+        shell: bash
+        run: |
+          set -euo pipefail
+          release="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease)"
+          test "$(jq -r .tagName <<<"$release")" = "$TAG"
+          test "$(jq -r .isDraft <<<"$release")" = false
+          test "$(jq -r .isPrerelease <<<"$release")" = false
+      - name: Download exact public bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir release-assets
+          test -z "$(find release-assets -mindepth 1 -print -quit)"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets
+          python scripts/validate_release_bundle.py release-assets --tag "$TAG" --project-file pyproject.toml
+      - name: Verify eight GitHub artifact attestations
+        shell: bash
+        run: |
+          set -euo pipefail
+          for artifact in \
+            release-assets/hf-download-live-monitor-windows-x86_64.exe \
+            release-assets/hf-download-live-monitor-windows-arm64.exe \
+            release-assets/hf-download-live-monitor-linux-x86_64 \
+            release-assets/hf-download-live-monitor-linux-arm64 \
+            release-assets/hf-download-live-monitor-macos-x86_64 \
+            release-assets/hf-download-live-monitor-macos-arm64 \
+            release-assets/hf_download_live_monitor-*.whl \
+            release-assets/hf_download_live_monitor-*.tar.gz
+          do
+            gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: validated-release-bundle
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 3
+
+  native:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            os: windows
+            arch: x86_64
+            asset: hf-download-live-monitor-windows-x86_64.exe
+          - runner: windows-11-arm
+            os: windows
+            arch: arm64
+            asset: hf-download-live-monitor-windows-arm64.exe
+          - runner: ubuntu-latest
+            os: linux
+            arch: x86_64
+            asset: hf-download-live-monitor-linux-x86_64
+          - runner: ubuntu-24.04-arm
+            os: linux
+            arch: arm64
+            asset: hf-download-live-monitor-linux-arm64
+          - runner: macos-15-intel
+            os: macos
+            arch: x86_64
+            asset: hf-download-live-monitor-macos-x86_64
+          - runner: macos-15
+            os: macos
+            arch: arm64
+            asset: hf-download-live-monitor-macos-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          architecture: ${{ matrix.arch == 'arm64' && 'arm64' || 'x64' }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: validated-release-bundle
+          path: ${{ runner.temp }}/release-assets
+      - name: Install public downloader dependency only
+        run: python -m pip install "huggingface-hub>=0.27,<2"
+      - name: Restore Unix executable permission
+        if: runner.os != 'Windows'
+        shell: bash
+        run: chmod +x "$RUNNER_TEMP/release-assets/${{ matrix.asset }}"
+      - name: Revalidate bundle and native architecture
+        shell: pwsh
+        run: |
+          python scripts/validate_release_bundle.py "$env:RUNNER_TEMP/release-assets" --tag "${{ inputs.tag }}" --project-file pyproject.toml
+          python -c "import platform; from scripts.build_standalone import normalized_architecture; assert normalized_architecture(platform.machine()) == '${{ matrix.arch }}', platform.machine()"
+      - name: Run published native acceptance
+        shell: pwsh
+        run: |
+          $monitor = (Resolve-Path "$env:RUNNER_TEMP/release-assets/${{ matrix.asset }}").Path
+          $hf = (Get-Command hf).Source
+          $report = "$env:RUNNER_TEMP/acceptance-${{ matrix.os }}-${{ matrix.arch }}.json"
+          python "$env:GITHUB_WORKSPACE/scripts/run_published_acceptance.py" --monitor "$monitor" --hf-executable "$hf" --tag "${{ inputs.tag }}" --asset "${{ matrix.asset }}" --report "$report" --checkout-root "$env:GITHUB_WORKSPACE"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: acceptance-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/acceptance-${{ matrix.os }}-${{ matrix.arch }}.json
+          if-no-files-found: warn
+
+  wheel:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v8
+        with:
+          name: validated-release-bundle
+          path: ${{ runner.temp }}/release-assets
+      - name: Install only the public wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/acceptance-venv"
+          "$RUNNER_TEMP/acceptance-venv/bin/python" -m pip install "$RUNNER_TEMP"/release-assets/*.whl
+          mkdir "$RUNNER_TEMP/wheel-execution"
+          cp scripts/run_published_acceptance.py "$RUNNER_TEMP/wheel-execution/"
+      - name: Prove isolated site-packages origin
+        shell: bash
+        env:
+          PYTHONPATH: ""
+          TAG: ${{ inputs.tag }}
+        run: |
+          cd "$RUNNER_TEMP/wheel-execution"
+          "$RUNNER_TEMP/acceptance-venv/bin/python" -c "import importlib.metadata, pathlib, site, hf_download_live_monitor; module_path = pathlib.Path(hf_download_live_monitor.__file__).resolve(); site_packages = pathlib.Path(site.getsitepackages()[0]).resolve(); assert module_path.is_relative_to(site_packages); assert importlib.metadata.version('hf-download-live-monitor') == '$TAG'.removeprefix('v')"
+      - name: Run isolated public-wheel acceptance
+        shell: bash
+        env:
+          PYTHONPATH: ""
+        run: |
+          cd "$RUNNER_TEMP/wheel-execution"
+          "$RUNNER_TEMP/acceptance-venv/bin/python" run_published_acceptance.py \
+            --monitor "$RUNNER_TEMP/acceptance-venv/bin/hf-download-live-monitor" \
+            --hf-executable "$RUNNER_TEMP/acceptance-venv/bin/hf" \
+            --tag "${{ inputs.tag }}" \
+            --asset "$(basename "$RUNNER_TEMP"/release-assets/*.whl)" \
+            --report "$RUNNER_TEMP/acceptance-wheel.json" \
+            --checkout-root "$GITHUB_WORKSPACE"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: acceptance-wheel
+          path: ${{ runner.temp }}/acceptance-wheel.json
+          if-no-files-found: warn

@@ -785,6 +785,38 @@ gh workflow run "Publish PyPI" -f tag=v0.1.0
 exact wheel and source archive to PyPI through OIDC. It does not build a second copy.
 Published assets are immutable; corrections use a new semantic version.
 
+### Published release acceptance
+
+After publication, maintainers run the manual **Release Acceptance** workflow against
+the stable tag:
+
+```powershell
+gh workflow run release-acceptance.yml -f tag=v0.1.0
+gh run watch --exit-status
+```
+
+The workflow downloads only public release assets and verifies the independently trusted
+GPG signature, protected-main ancestry, exact 15-file bundle, checksums, package versions,
+and eight GitHub attestations. It then exercises the distributed applications on
+Windows x86_64, Windows ARM64, Linux x86_64, Linux ARM64, macOS x86_64, and macOS ARM64.
+
+Each native job runs a deterministic download against a localhost fixture. In structured
+mode, JSON stdout must contain exactly one final document while downloader output and
+progress stderr remain separate. No Hugging Face credentials or external model repository are
+required.
+
+The wheel job installs the public wheel into a clean environment, removes `PYTHONPATH`,
+runs outside the checkout, and proves the imported application comes from that
+environment's `site-packages`. Download the `acceptance-wheel` and
+`acceptance-<os>-<architecture>` report artifacts from the workflow run for the recorded
+exit codes and outcomes.
+
+Acceptance succeeds only when validation, all six native entries, and the isolated wheel
+pass. An unavailable hosted runner is an infrastructure condition; an executed failing
+job is a product or acceptance-system defect. Neither case permits changing the existing
+tag or replacing its assets. Corrections receive a new release such as `v0.1.1` and the
+workflow is run again. Release Acceptance is read-only and does not publish to PyPI.
+
 ## Privacy and security
 
 - No telemetry is collected.
