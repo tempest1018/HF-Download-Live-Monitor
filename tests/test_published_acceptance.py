@@ -7,7 +7,13 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from scripts.run_published_acceptance import REVISION, AcceptanceError, HubFixture, run_acceptance
+from scripts.run_published_acceptance import (
+    REVISION,
+    AcceptanceError,
+    HubFixture,
+    _validate_supervisor_events,
+    run_acceptance,
+)
 
 
 def test_hub_fixture_serves_pinned_metadata_and_payload() -> None:
@@ -154,3 +160,39 @@ def test_run_acceptance_rejects_report_inside_checkout(tmp_path: Path) -> None:
             report=(checkout / "acceptance.json").resolve(),
             checkout_root=checkout,
         )
+
+
+def test_multi_event_contract_allows_rate_limited_sequence_gaps() -> None:
+    events = [
+        {"sequence": 1, "event": "session_added"},
+        {
+            "sequence": 3,
+            "event": "session_finalized",
+            "session": {"lifecycle": "completed"},
+        },
+        {
+            "sequence": 5,
+            "event": "session_finalized",
+            "session": {"lifecycle": "failed"},
+        },
+        {"sequence": 6, "event": "supervisor_stopped"},
+    ]
+    _validate_supervisor_events(events)
+
+
+def test_multi_event_contract_rejects_non_monotonic_sequences() -> None:
+    events = [
+        {
+            "sequence": 2,
+            "event": "session_finalized",
+            "session": {"lifecycle": "completed"},
+        },
+        {
+            "sequence": 1,
+            "event": "session_finalized",
+            "session": {"lifecycle": "failed"},
+        },
+        {"sequence": 3, "event": "supervisor_stopped"},
+    ]
+    with pytest.raises(AcceptanceError, match="strictly increasing"):
+        _validate_supervisor_events(events)

@@ -137,7 +137,11 @@ jobs:
           $monitor = (Resolve-Path "$env:RUNNER_TEMP/release-assets/${{ matrix.asset }}").Path
           $hf = (Get-Command hf).Source
           $report = "$env:RUNNER_TEMP/acceptance-${{ matrix.os }}-${{ matrix.arch }}.json"
-          python "$env:GITHUB_WORKSPACE/scripts/run_published_acceptance.py" --monitor "$monitor" --hf-executable "$hf" --tag "${{ inputs.tag }}" --asset "${{ matrix.asset }}" --report "$report" --checkout-root "$env:GITHUB_WORKSPACE"
+          $multiArgs = @()
+          if ('${{ matrix.os }}' -eq 'linux' -and '${{ matrix.arch }}' -eq 'x86_64') {
+            $multiArgs += '--multi'
+          }
+          python "$env:GITHUB_WORKSPACE/scripts/run_published_acceptance.py" --monitor "$monitor" --hf-executable "$hf" --tag "${{ inputs.tag }}" --asset "${{ matrix.asset }}" --report "$report" --checkout-root "$env:GITHUB_WORKSPACE" @multiArgs
       - uses: actions/upload-artifact@v7
         if: always()
         with:

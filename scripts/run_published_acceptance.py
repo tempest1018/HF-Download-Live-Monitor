@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -56,9 +57,13 @@ class HubFixture:
         content: bytes = DEFAULT_CONTENT,
         chunk_size: int = 1024,
         delay: float = 0.001,
+        files: dict[str, bytes] | None = None,
+        corrupt_files: set[str] | None = None,
     ) -> None:
         if not content or chunk_size <= 0 or delay < 0:
             raise ValueError("fixture content and timing values must be valid")
+        self.files = files or {"config.json": content}
+        self.corrupt_files = corrupt_files or set()
         self.content = content
         self.chunk_size = chunk_size
         self.delay = delay
@@ -102,9 +107,10 @@ class HubFixture:
 
     def _handle(self, handler: BaseHTTPRequestHandler, *, include_body: bool) -> None:
         metadata_path = f"/api/models/acceptance/tiny/revision/{REVISION}"
-        payload_path = f"/acceptance/tiny/resolve/{REVISION}/config.json"
         request = urlsplit(handler.path)
         query = parse_qs(request.query, keep_blank_values=True)
+        filename = request.path.rsplit("/", 1)[-1]
+        selected = self.files.get(filename)
         digest = hashlib.sha256(self.content).hexdigest()
         if request.path == metadata_path and set(query) <= {"blobs"}:
             body = json.dumps(
@@ -113,14 +119,15 @@ class HubFixture:
                     "sha": REVISION,
                     "siblings": [
                         {
-                            "rfilename": "config.json",
-                            "size": len(self.content),
+                            "rfilename": name,
+                            "size": len(payload),
                             "lfs": {
-                                "sha256": digest,
-                                "size": len(self.content),
+                                "sha256": hashlib.sha256(payload).hexdigest(),
+                                "size": len(payload),
                                 "pointerSize": 130,
                             },
                         }
+                        for name, payload in self.files.items()
                     ],
                 }
             ).encode()
@@ -131,17 +138,22 @@ class HubFixture:
             if include_body:
                 handler.wfile.write(body)
             return
-        if request.path != payload_path or not set(query) <= {"download"}:
+        valid_paths = {
+            f"/acceptance/tiny/resolve/{REVISION}/{name}" for name in self.files
+        }
+        if request.path not in valid_paths or not set(query) <= {"download"} or selected is None:
             handler.send_error(404)
             return
+        digest = hashlib.sha256(selected).hexdigest()
+        served = selected + b"corrupt" if filename in self.corrupt_files else selected
         handler.send_response(200)
         handler.send_header("x-repo-commit", REVISION)
         handler.send_header("etag", f'"{digest}"')
-        handler.send_header("content-length", str(len(self.content)))
+        handler.send_header("content-length", str(len(served)))
         handler.end_headers()
         if include_body:
-            for offset in range(0, len(self.content), self.chunk_size):
-                handler.wfile.write(self.content[offset : offset + self.chunk_size])
+            for offset in range(0, len(served), self.chunk_size):
+                handler.wfile.write(served[offset : offset + self.chunk_size])
                 handler.wfile.flush()
                 if self.delay:
                     time.sleep(self.delay)
@@ -156,6 +168,7 @@ def run_acceptance(
     report: Path,
     checkout_root: Path,
     timeout: float = 60.0,
+    multi: bool = False,
 ) -> AcceptanceResult:
     """Exercise a published executable and emit a compact, redacted report."""
     _validate_inputs(monitor, hf_executable, tag, asset, report, checkout_root)
@@ -202,6 +215,24 @@ def run_acceptance(
             _validate_snapshot(snapshot)
             if not command.stderr.strip():
                 raise AcceptanceError("expected progress or downloader activity on stderr")
+            if multi:
+                with HubFixture(
+                    files={
+                        "config.json": DEFAULT_CONTENT * 32,
+                        "corrupt.bin": DEFAULT_CONTENT * 32,
+                    },
+                    corrupt_files={"corrupt.bin"},
+                    delay=0.003,
+                ) as multi_fixture:
+                    commands.append(
+                        run_multi_acceptance(
+                            monitor=monitor,
+                            hf_executable=hf_executable,
+                            fixture=multi_fixture,
+                            root=Path(temporary),
+                            timeout=timeout,
+                        )
+                    )
     except Exception as exc:
         _write_report(report, tag, asset, commands, "failed", str(exc))
         if isinstance(exc, AcceptanceError):
@@ -220,6 +251,118 @@ def run_acceptance(
     )
     _write_report(report, tag, asset, commands, result.outcome)
     return result
+
+
+def run_multi_acceptance(
+    *,
+    monitor: Path,
+    hf_executable: Path,
+    fixture: HubFixture,
+    root: Path,
+    timeout: float,
+) -> CommandResult:
+    """Exercise continuous multi-attach and stop only the monitor after two finals."""
+    children: list[subprocess.Popen[str]] = []
+    monitor_process: subprocess.Popen[str] | None = None
+    lines: list[str] = []
+    environment = os.environ.copy()
+    environment.update(
+        HF_ENDPOINT=fixture.endpoint,
+        PYTHONUTF8="1",
+        PYTHONIOENCODING="utf-8",
+        HF_HUB_DISABLE_PROGRESS_BARS="1",
+    )
+    try:
+        for index, filename in enumerate(fixture.files):
+            child_env = environment.copy()
+            child_env["HF_HOME"] = str(root / f"hf-home-{index}")
+            children.append(
+                subprocess.Popen(
+                    [
+                        str(hf_executable),
+                        "download",
+                        "acceptance/tiny",
+                        filename,
+                        "--revision",
+                        REVISION,
+                        "--local-dir",
+                        str(root / f"multi-{index}"),
+                    ],
+                    env=child_env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                )
+            )
+        executable = [str(monitor)]
+        if monitor.suffix.lower() == ".py":
+            executable.insert(0, sys.executable)
+        monitor_process = subprocess.Popen(
+            [*executable, "attach", "--all", "--jsonl", "--discovery-refresh", "0.05"],
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+        def collect() -> None:
+            assert monitor_process is not None and monitor_process.stdout is not None
+            lines.extend(monitor_process.stdout)
+
+        reader = Thread(target=collect, daemon=True)
+        reader.start()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            events = _parse_jsonl_events(lines)
+            if sum(item.get("event") == "session_finalized" for item in events) >= 2:
+                break
+            if monitor_process.poll() is not None:
+                raise AcceptanceError("multi-download monitor exited before finalization")
+            time.sleep(0.05)
+        else:
+            raise AcceptanceError("multi-download acceptance timed out")
+        monitor_process.send_signal(signal.SIGINT)
+        exit_code = monitor_process.wait(timeout=10)
+        reader.join(timeout=2)
+        events = _parse_jsonl_events(lines)
+        _validate_supervisor_events(events)
+        return CommandResult(("attach", "--all", "--jsonl"), exit_code, "".join(lines), "")
+    finally:
+        if monitor_process is not None and monitor_process.poll() is None:
+            monitor_process.kill()
+            monitor_process.wait(timeout=5)
+        for child in children:
+            if child.poll() is None:
+                child.wait(timeout=10)
+
+
+def _parse_jsonl_events(lines: list[str]) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for line in tuple(lines):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise AcceptanceError("multi-download stdout contained invalid JSONL") from exc
+        if not isinstance(payload, dict):
+            raise AcceptanceError("multi-download JSONL event was not an object")
+        events.append(cast(dict[str, Any], payload))
+    return events
+
+
+def _validate_supervisor_events(events: list[dict[str, Any]]) -> None:
+    sequences = [item.get("sequence") for item in events]
+    if sequences != sorted(set(sequences)):
+        raise AcceptanceError("supervisor event sequences were not strictly increasing")
+    finals = [item for item in events if item.get("event") == "session_finalized"]
+    if len(finals) != 2 or not events or events[-1].get("event") != "supervisor_stopped":
+        raise AcceptanceError("supervisor did not emit two finals and an orderly stop")
+    lifecycles = {
+        cast(dict[str, object], item.get("session", {})).get("lifecycle") for item in finals
+    }
+    if lifecycles != {"completed", "failed"}:
+        raise AcceptanceError("supervisor final outcomes were not completed and failed")
 
 
 def _validate_inputs(
@@ -367,6 +510,7 @@ def main() -> int:
     parser.add_argument("--asset", required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--checkout-root", type=Path, required=True)
+    parser.add_argument("--multi", action="store_true")
     args = parser.parse_args()
     try:
         run_acceptance(**vars(args))

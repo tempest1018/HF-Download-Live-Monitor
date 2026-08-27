@@ -256,6 +256,8 @@ def test_release_acceptance_workflow_is_read_only_and_cross_platform() -> None:
         "actions/upload-artifact@v7",
         "if: always()",
         "run_published_acceptance.py",
+        "--multi",
+        "matrix.os",
         "PYTHONPATH",
         "site.getsitepackages",
     ):
