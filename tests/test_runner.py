@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 from collections.abc import Callable
@@ -418,7 +419,30 @@ def test_start_process_routes_child_output_to_stderr(monkeypatch: pytest.MonkeyP
         "command": ("hf", "download", "owner/repo"),
         "stdout": sys.stderr,
         "stderr": None,
+        "env": os.environ,
     }
+
+
+def test_start_process_restores_library_path_for_frozen_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, object] = {}
+
+    def popen(command: tuple[str, ...], **kwargs: object) -> FakeProcess:
+        seen.update(kwargs)
+        return FakeProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI/bundled")
+    monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/usr/local/lib")
+
+    _start_process(("hf", "download", "owner/repo"))
+
+    environment = seen["env"]
+    assert isinstance(environment, dict)
+    assert environment["LD_LIBRARY_PATH"] == "/usr/local/lib"
+    assert "LD_LIBRARY_PATH_ORIG" not in environment
 
 
 def test_started_child_stdout_cannot_contaminate_monitor_stdout(

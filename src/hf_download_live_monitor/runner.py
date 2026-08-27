@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from collections.abc import Callable
@@ -129,4 +130,22 @@ def _attach_cleanup_note(error: BaseException, cleanup_error: BaseException) -> 
 
 
 def _start_process(command: tuple[str, ...]) -> ChildProcess:
-    return subprocess.Popen(command, stdout=sys.stderr, stderr=None)
+    return subprocess.Popen(
+        command,
+        stdout=sys.stderr,
+        stderr=None,
+        env=_child_environment(),
+    )
+
+
+def _child_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    if not getattr(sys, "frozen", False):
+        return environment
+    for variable in ("LD_LIBRARY_PATH", "LIBPATH"):
+        original = environment.pop(f"{variable}_ORIG", None)
+        if original is None:
+            environment.pop(variable, None)
+        else:
+            environment[variable] = original
+    return environment
