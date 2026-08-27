@@ -2,6 +2,11 @@ import json
 from io import StringIO
 from pathlib import Path
 
+import pytest
+from rich.console import Console
+
+from hf_download_live_monitor.controls import SupervisorDisplayState
+from hf_download_live_monitor.layout import ViewMode
 from hf_download_live_monitor.models import DownloadSpec, ProgressSnapshot
 from hf_download_live_monitor.supervisor_models import (
     EventType,
@@ -14,6 +19,8 @@ from hf_download_live_monitor.supervisor_renderers import (
     SupervisorJsonLinesRenderer,
     SupervisorJsonRenderer,
     SupervisorPlainRenderer,
+    SupervisorRichRenderer,
+    supervisor_layout,
 )
 
 
@@ -83,3 +90,25 @@ def test_plain_renderer_deduplicates_lifecycle_lines() -> None:
     renderer.render_event(added)
 
     assert stream.getvalue().count("owner/repo") == 1
+
+
+@pytest.mark.parametrize(("width", "columns"), [(45, 4), (90, 6), (140, 8)])
+def test_supervisor_layout_adapts_repository_columns(width: int, columns: int) -> None:
+    assert supervisor_layout(width, ViewMode.BALANCED).repository_columns == columns
+
+
+@pytest.mark.parametrize("width", [45, 90, 140])
+def test_rich_dashboard_renders_at_supported_widths(width: int) -> None:
+    stream = StringIO()
+    console = Console(file=stream, width=width, force_terminal=False, no_color=True)
+    renderer = SupervisorRichRenderer(
+        console,
+        display_state=SupervisorDisplayState(),
+        ascii_only=True,
+        reduced_motion=True,
+    )
+    renderer.render_snapshot(snapshot())
+    renderer.close()
+    output = stream.getvalue()
+    assert "owner/repo" in output
+    assert "HF Download Live Monitor" in output

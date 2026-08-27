@@ -1,7 +1,11 @@
 import pytest
 
 from hf_download_live_monitor import controls as controls_module
-from hf_download_live_monitor.controls import DisplayState, KeyboardController
+from hf_download_live_monitor.controls import (
+    DisplayState,
+    KeyboardController,
+    SupervisorDisplayState,
+)
 from hf_download_live_monitor.layout import ViewMode
 
 
@@ -175,3 +179,24 @@ def test_posix_reader_sets_cbreak_and_restores_exact_settings_after_poll_error()
         ("cbreak", 7),
         ("restore", 7, 9, previous),
     ]
+
+
+def test_supervisor_selection_is_stable_and_wraps() -> None:
+    state = SupervisorDisplayState().reconcile(("alpha", "beta", "gamma"))
+    assert state.selected_session_id == "alpha"
+    assert state.apply_key("j").selected_session_id == "beta"
+    assert state.apply_key("k").selected_session_id == "gamma"
+
+
+def test_supervisor_selection_survives_reordering_and_uses_nearest_after_removal() -> None:
+    state = SupervisorDisplayState(selected_session_id="beta").reconcile(
+        ("alpha", "beta", "gamma")
+    )
+    assert state.reconcile(("gamma", "beta", "alpha")).selected_session_id == "beta"
+    assert state.reconcile(("alpha", "gamma")).selected_session_id == "gamma"
+
+
+def test_keyboard_controller_supports_supervisor_display_state() -> None:
+    controller = KeyboardController(read_key=lambda: "j")
+    state = SupervisorDisplayState().reconcile(("alpha", "beta"))
+    assert controller.poll(state).selected_session_id == "beta"
