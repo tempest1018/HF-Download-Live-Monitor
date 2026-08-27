@@ -15,7 +15,8 @@ def test_hub_fixture_serves_pinned_metadata_and_payload() -> None:
     with HubFixture(content=content, chunk_size=1024, delay=0.001) as fixture:
         metadata = json.loads(
             urlopen(
-                f"{fixture.endpoint}/api/models/acceptance/tiny/revision/{REVISION}", timeout=5
+                f"{fixture.endpoint}/api/models/acceptance/tiny/revision/{REVISION}?blobs=true",
+                timeout=5,
             ).read()
         )
         assert metadata["sha"] == REVISION
@@ -26,6 +27,7 @@ def test_hub_fixture_serves_pinned_metadata_and_payload() -> None:
                 "lfs": {
                     "sha256": hashlib.sha256(content).hexdigest(),
                     "size": len(content),
+                    "pointerSize": 130,
                 },
             }
         ]
@@ -65,10 +67,13 @@ def _fake_monitor(tmp_path: Path, *, stdout_suffix: str = "", exit_code: int = 0
         "errors": [],
     }
     script.write_text(
-        "import json, sys\n"
+        "import json, os, sys\n"
         "if '--help' in sys.argv:\n"
         "    print('help')\n"
         "    raise SystemExit(0)\n"
+        "if os.environ.get('PYTHONUTF8') != '1':\n"
+        "    print('PYTHONUTF8 missing', file=sys.stderr)\n"
+        "    raise SystemExit(9)\n"
         "print('downloader progress', file=sys.stderr)\n"
         f"print(json.dumps({snapshot!r}) + {stdout_suffix!r})\n"
         f"raise SystemExit({exit_code})\n",

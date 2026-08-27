@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 from typing import Any, cast
+from urllib.parse import parse_qs, urlsplit
 
 REVISION = "a" * 40
 DEFAULT_CONTENT = b'{"model_type":"acceptance"}\n' * 4096
@@ -102,8 +103,10 @@ class HubFixture:
     def _handle(self, handler: BaseHTTPRequestHandler, *, include_body: bool) -> None:
         metadata_path = f"/api/models/acceptance/tiny/revision/{REVISION}"
         payload_path = f"/acceptance/tiny/resolve/{REVISION}/config.json"
+        request = urlsplit(handler.path)
+        query = parse_qs(request.query, keep_blank_values=True)
         digest = hashlib.sha256(self.content).hexdigest()
-        if handler.path == metadata_path:
+        if request.path == metadata_path and set(query) <= {"blobs"}:
             body = json.dumps(
                 {
                     "id": "acceptance/tiny",
@@ -112,7 +115,11 @@ class HubFixture:
                         {
                             "rfilename": "config.json",
                             "size": len(self.content),
-                            "lfs": {"sha256": digest, "size": len(self.content)},
+                            "lfs": {
+                                "sha256": digest,
+                                "size": len(self.content),
+                                "pointerSize": 130,
+                            },
                         }
                     ],
                 }
@@ -124,7 +131,7 @@ class HubFixture:
             if include_body:
                 handler.wfile.write(body)
             return
-        if handler.path != payload_path:
+        if request.path != payload_path or not set(query) <= {"download"}:
             handler.send_error(404)
             return
         handler.send_response(200)
@@ -186,6 +193,8 @@ def run_acceptance(
             )
             environment = os.environ.copy()
             environment["HF_ENDPOINT"] = fixture.endpoint
+            environment["PYTHONUTF8"] = "1"
+            environment["PYTHONIOENCODING"] = "utf-8"
             command = _run(monitor, arguments, timeout=timeout, environment=environment)
             commands.append(command)
             _require_success(command)
