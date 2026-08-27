@@ -7,10 +7,24 @@ import json
 import os
 import shlex
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
+
+import psutil
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class ProcessIdentity:
+    pid: int
+    start_token: str
+
+    def __post_init__(self) -> None:
+        if self.pid <= 0:
+            raise ValueError("PID must be positive")
+        if not self.start_token:
+            raise ValueError("process start token must not be empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,14 +32,58 @@ class ProcessRecord:
     pid: int
     args: tuple[str, ...]
     cwd: Path
+    start_token: str = "unknown"
 
     def __post_init__(self) -> None:
         if self.pid <= 0:
             raise ValueError("PID must be positive")
+        if not self.start_token:
+            raise ValueError("process start token must not be empty")
+
+    @property
+    def identity(self) -> ProcessIdentity:
+        return ProcessIdentity(self.pid, self.start_token)
 
 
 class ProcessProvider(Protocol):
     def discover(self) -> tuple[ProcessRecord, ...]: ...
+
+
+class _PsutilProcess(Protocol):
+    pid: int
+
+    def cmdline(self) -> list[str]: ...
+
+    def cwd(self) -> str: ...
+
+    def create_time(self) -> float: ...
+
+
+class PsutilProcessProvider:
+    def __init__(
+        self,
+        iterator: Callable[[], Iterable[_PsutilProcess]] | None = None,
+    ) -> None:
+        self._iterator = iterator or psutil.process_iter
+
+    def discover(self) -> tuple[ProcessRecord, ...]:
+        records: list[ProcessRecord] = []
+        for process in self._iterator():
+            try:
+                args = tuple(process.cmdline())
+                if not args:
+                    continue
+                records.append(
+                    ProcessRecord(
+                        process.pid,
+                        args,
+                        Path(process.cwd()),
+                        f"{process.create_time():.9f}",
+                    )
+                )
+            except (OSError, ValueError, psutil.Error):
+                continue
+        return tuple(sorted(records, key=lambda item: item.identity))
 
 
 class PosixProcessProvider:
@@ -96,10 +154,8 @@ class WindowsProcessProvider:
 
 def system_process_provider(platform: str | None = None) -> ProcessProvider:
     platform = platform or os.name
-    if platform == "nt":
-        return WindowsProcessProvider()
-    if platform == "posix":
-        return PosixProcessProvider()
+    if platform in {"nt", "posix"}:
+        return PsutilProcessProvider()
     raise ValueError(f"unsupported process platform: {platform}")
 
 
