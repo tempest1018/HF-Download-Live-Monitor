@@ -4,6 +4,8 @@ All notable changes follow Keep a Changelog and semantic versioning.
 
 ## Unreleased
 
+## 0.2.0 - 2026-08-27
+
 ### Added
 
 - Continuously discover and monitor concurrent Hugging Face downloads with

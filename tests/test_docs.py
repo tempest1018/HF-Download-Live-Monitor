@@ -239,8 +239,8 @@ def test_version_and_draft_first_release_contract_are_documented() -> None:
     manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
     architecture = Path("docs/architecture.md").read_text(encoding="utf-8")
     combined = "\n".join((readme, manual, architecture))
-    assert 'version = "0.1.2"' in project
-    assert "## 0.1.2 - 2026-08-27" in changelog
+    assert 'version = "0.2.0"' in project
+    assert "## 0.2.0 - 2026-08-27" in changelog
     assert "## 0.1.1 - 2026-08-27" in changelog
     assert "## 0.1.0 - 2026-08-24" in changelog
     assert "## 0.1.0 - Unreleased" not in changelog
