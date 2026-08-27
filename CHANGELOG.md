@@ -2,6 +2,27 @@
 
 All notable changes follow Keep a Changelog and semantic versioning.
 
+## 0.1.1 - 2026-08-27
+
+### Added
+
+- Add read-only published-release acceptance across six native targets and an isolated
+  public-wheel installation.
+
+### Fixed
+
+- Emit the final snapshot from continuous JSON mode instead of the first observation.
+- Reject malformed or negative repository file-size metadata safely.
+- Map renderer shutdown failures to the documented monitor error category and exit code.
+- Remove timing assumptions from asynchronous integrity-verification tests.
+
+### Security
+
+- Verify release tags with an independently stored, fingerprint-pinned public key and
+  require protected-main ancestry before publishing.
+- Protect `main` with required signed commits and CI checks, and protect stable release
+  tags against deletion or backward movement.
+
 ## 0.1.0 - 2026-08-24
 
 ### Added
