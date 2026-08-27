@@ -190,6 +190,93 @@ def _workflow_triggers(workflow: dict[str, object]) -> dict[str, object]:
     return triggers
 
 
+def test_release_acceptance_workflow_is_read_only_and_cross_platform() -> None:
+    workflow = _workflow("release-acceptance")
+    triggers = _workflow_triggers(workflow)
+    assert set(triggers) == {"workflow_dispatch"}
+    dispatch = triggers["workflow_dispatch"]
+    assert isinstance(dispatch, dict)
+    inputs = dispatch["inputs"]
+    assert isinstance(inputs, dict)
+    assert inputs["tag"]["required"] is True
+    assert inputs["tag"]["type"] == "string"
+    assert workflow["permissions"] == {"contents": "read", "attestations": "read"}
+
+    jobs = workflow["jobs"]
+    assert isinstance(jobs, dict)
+    assert set(jobs) == {"validate", "native", "wheel"}
+    native = jobs["native"]
+    wheel = jobs["wheel"]
+    assert native["needs"] == "validate"
+    assert wheel["needs"] == "validate"
+    assert native["strategy"]["matrix"]["include"] == [
+        {
+            "runner": "windows-latest",
+            "os": "windows",
+            "arch": "x86_64",
+            "asset": "hf-download-live-monitor-windows-x86_64.exe",
+        },
+        {
+            "runner": "windows-11-arm",
+            "os": "windows",
+            "arch": "arm64",
+            "asset": "hf-download-live-monitor-windows-arm64.exe",
+        },
+        {
+            "runner": "ubuntu-latest",
+            "os": "linux",
+            "arch": "x86_64",
+            "asset": "hf-download-live-monitor-linux-x86_64",
+        },
+        {
+            "runner": "ubuntu-24.04-arm",
+            "os": "linux",
+            "arch": "arm64",
+            "asset": "hf-download-live-monitor-linux-arm64",
+        },
+        {
+            "runner": "macos-15-intel",
+            "os": "macos",
+            "arch": "x86_64",
+            "asset": "hf-download-live-monitor-macos-x86_64",
+        },
+        {
+            "runner": "macos-15",
+            "os": "macos",
+            "arch": "arm64",
+            "asset": "hf-download-live-monitor-macos-arm64",
+        },
+    ]
+    rendered = Path(".github/workflows/release-acceptance.yml").read_text(encoding="utf-8")
+    for required in (
+        "git verify-tag",
+        "gh release view",
+        "scripts/validate_release_bundle.py",
+        "gh attestation verify",
+        "actions/upload-artifact@v7",
+        "if: always()",
+        "run_published_acceptance.py",
+        "PYTHONPATH",
+        "site.getsitepackages",
+    ):
+        assert required in rendered
+    assert "Verify eight GitHub artifact attestations" in rendered
+    assert rendered.count("release-assets/hf-download-live-monitor-") >= 6
+    for prohibited in (
+        "gh release create",
+        "gh release edit",
+        "gh release upload",
+        "pypa/gh-action-pypi-publish",
+        "python -m build",
+        "PyInstaller",
+        "pip install -e",
+        "id-token: write",
+        "contents: write",
+        "packages: write",
+    ):
+        assert prohibited not in rendered
+
+
 def test_ci_keeps_x64_matrix_and_adds_native_arm64_validation() -> None:
     workflow = _workflow("ci")
     assert set(_workflow_triggers(workflow)) == {"push", "pull_request", "workflow_dispatch"}

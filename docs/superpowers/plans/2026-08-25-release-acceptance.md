@@ -33,13 +33,17 @@ Add tests that start `HubFixture`, request `/api/models/acceptance/tiny/revision
 def test_hub_fixture_serves_pinned_metadata_and_payload() -> None:
     content = b'{"model_type":"acceptance"}\n' * 4096
     with HubFixture(content=content, chunk_size=1024, delay=0.001) as fixture:
-        metadata = json.loads(urlopen(f"{fixture.endpoint}/api/models/acceptance/tiny/revision/{REVISION}").read())
+        metadata = json.loads(
+            urlopen(f"{fixture.endpoint}/api/models/acceptance/tiny/revision/{REVISION}").read()
+        )
         assert metadata["sha"] == REVISION
-        assert metadata["siblings"] == [{
-            "rfilename": "config.json",
-            "size": len(content),
-            "lfs": {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)},
-        }]
+        assert metadata["siblings"] == [
+            {
+                "rfilename": "config.json",
+                "size": len(content),
+                "lfs": {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)},
+            }
+        ]
 ```
 
 - [ ] **Step 2: Run the fixture test and verify RED**
