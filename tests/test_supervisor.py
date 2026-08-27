@@ -370,3 +370,54 @@ def test_shutdown_bounds_engine_close_and_avoids_inflight_close_race() -> None:
     assert close_started.is_set()
     assert executor.shutdown_calls == [(False, True)]
     release_close.set()
+
+
+def test_inflight_finalization_closes_engine_only_after_work_finishes() -> None:
+    close_called = threading.Event()
+
+    class RecordingEngine(ProgressEngine):
+        def close(self) -> None:
+            close_called.set()
+            super().close()
+
+    class DelayedFinalExecutor(ImmediateExecutor):
+        def __init__(self) -> None:
+            super().__init__()
+            self.final_future: Future[Any] | None = None
+            self.final_work: tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any]] | None = (
+                None
+            )
+
+        def submit(self, fn, /, *args, **kwargs):
+            if self.final_future is None and getattr(fn, "__name__", "") == "_observe":
+                self.final_future = Future()
+                self.final_future.set_running_or_notify_cancel()
+                self.final_work = (fn, args, kwargs)
+                return self.final_future
+            return super().submit(fn, *args, **kwargs)
+
+        def finish_finalization(self) -> None:
+            assert self.final_future is not None and self.final_work is not None
+            fn, args, kwargs = self.final_work
+            self.final_future.set_result(fn(*args, **kwargs))
+
+    clock = FakeClock()
+    executor = DelayedFinalExecutor()
+    supervisor = DownloadSupervisor(
+        SequenceDiscovery(((candidate(),), (candidate(),), ())),
+        repository=FakeRepository(),
+        observer=FakeObserver(),
+        engine_factory=RecordingEngine,
+        executor=executor,
+        clock=clock,
+        shutdown_timeout=0.01,
+    )
+    for _ in range(3):
+        supervisor.tick()
+        clock.advance(1)
+    assert supervisor.snapshot.sessions[0].lifecycle is SessionLifecycle.FINALIZING
+
+    supervisor.shutdown()
+    assert not close_called.is_set()
+    executor.finish_finalization()
+    assert close_called.wait(timeout=0.5)
