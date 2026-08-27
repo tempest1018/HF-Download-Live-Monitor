@@ -19,7 +19,10 @@ Continuous `attach --all` adds a `DownloadSupervisor` above those per-repository
 components. A `psutil` provider supplies `(PID, process start token)` identities so PID
 reuse cannot merge sessions. Discovery reconciliation, a four-worker preparation and
 finalization pool, one progress engine per session, bounded session count, idle backoff,
-and timed retention keep resource use predictable. Immutable `SupervisorSnapshot`
+and timed retention keep resource use predictable. Already admitted live sessions keep
+their slots when new candidates appear. Shutdown waits at most two seconds for
+supervisor work; daemon workers ensure a stuck metadata call cannot hold the monitor
+process open. Immutable `SupervisorSnapshot`
 values feed the adaptive aggregate renderer; versioned `supervisor_event` values feed
 JSONL, while final JSON emits one last aggregate document.
 

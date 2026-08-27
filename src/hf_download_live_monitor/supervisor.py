@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import queue
+import threading
 import time
 import uuid
 from collections import deque
 from collections.abc import Callable
-from concurrent.futures import Executor, Future, ThreadPoolExecutor
-from contextlib import suppress
+from concurrent.futures import Executor, Future
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass
-from typing import Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 from hf_download_live_monitor.app import Observer, Repository
 from hf_download_live_monitor.attach import DownloadCandidate, SessionKey
@@ -40,6 +42,76 @@ class SupervisorControls(Protocol):
     def poll(self, state: SupervisorDisplayState) -> SupervisorDisplayState: ...
 
     def close(self) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _WorkItem:
+    future: Future[Any]
+    function: Callable[..., Any]
+    args: tuple[Any, ...]
+    kwargs: dict[str, Any]
+
+
+class _DaemonExecutor(Executor):
+    """Small bounded executor whose stuck workers cannot hold the monitor process open."""
+
+    def __init__(self, max_workers: int = 4) -> None:
+        self._queue: queue.Queue[_WorkItem | None] = queue.Queue()
+        self._closed = False
+        self._lock = threading.Lock()
+        self._threads = tuple(
+            threading.Thread(
+                target=self._worker,
+                name=f"hf-supervisor-{index}",
+                daemon=True,
+            )
+            for index in range(max_workers)
+        )
+        for thread in self._threads:
+            thread.start()
+
+    def submit(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Future[Any]:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("cannot schedule work after shutdown")
+            future: Future[Any] = Future()
+            self._queue.put(_WorkItem(future, fn, args, kwargs))
+            return future
+
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+        with self._lock:
+            if not self._closed:
+                self._closed = True
+                if cancel_futures:
+                    self._cancel_queued()
+                for _ in self._threads:
+                    self._queue.put(None)
+        if wait:
+            for thread in self._threads:
+                thread.join()
+
+    def _cancel_queued(self) -> None:
+        while True:
+            try:
+                item = self._queue.get_nowait()
+            except queue.Empty:
+                return
+            if item is not None:
+                item.future.cancel()
+
+    def _worker(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            if not item.future.set_running_or_notify_cancel():
+                continue
+            try:
+                result = item.function(*item.args, **item.kwargs)
+            except BaseException as exc:
+                item.future.set_exception(exc)
+            else:
+                item.future.set_result(result)
 
 
 @dataclass(slots=True)
@@ -90,6 +162,7 @@ class DownloadSupervisor:
         controls: SupervisorControls | None = None,
         display_state: SupervisorDisplayState | None = None,
         sleeper: Callable[[float], None] = time.sleep,
+        shutdown_timeout: float = 2.0,
     ) -> None:
         if discovery_refresh <= 0:
             raise ValueError("discovery refresh must be positive")
@@ -99,6 +172,8 @@ class DownloadSupervisor:
             raise ValueError("max sessions must be positive")
         if refresh <= 0:
             raise ValueError("refresh must be positive")
+        if shutdown_timeout <= 0:
+            raise ValueError("shutdown timeout must be positive")
         dependencies = (repository, observer, engine_factory)
         if any(item is None for item in dependencies) and any(
             item is not None for item in dependencies
@@ -114,12 +189,13 @@ class DownloadSupervisor:
         self._engine_factory = engine_factory
         self._executor = executor if repository is not None else None
         if repository is not None and self._executor is None:
-            self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="hf-supervisor")
+            self._executor = _DaemonExecutor(max_workers=4)
         self._refresh = refresh
         self._renderer = renderer
         self._controls = controls
         self._display_state = display_state or SupervisorDisplayState()
         self._sleeper = sleeper
+        self._shutdown_timeout = shutdown_timeout
         self._run_id = run_id or str(uuid.uuid4())
         self._sessions: dict[SessionKey, _SessionRuntime] = {}
         self._events: deque[SupervisorEvent] = deque(maxlen=4096)
@@ -191,7 +267,15 @@ class DownloadSupervisor:
 
         self._discovery_health = DiscoveryHealth.HEALTHY
         self._warning_active = False
-        visible = {item.key: item for item in candidates[: self._max_sessions]}
+        by_key = {item.key: item for item in candidates}
+        admitted = [
+            key
+            for key, runtime in sorted(self._sessions.items(), key=lambda item: item[0])
+            if runtime.finalized_at is None and key in by_key
+        ]
+        available = max(0, self._max_sessions - len(admitted))
+        newcomers = [item.key for item in candidates if item.key not in self._sessions][:available]
+        visible = {key: by_key[key] for key in (*admitted, *newcomers)}
         for key, candidate in visible.items():
             if key in self._sessions:
                 self._sessions[key].present = True
@@ -356,15 +440,19 @@ class DownloadSupervisor:
         self._closed = True
         now = self._clock()
         close_error: BaseException | None = None
+        all_work_stopped = True
+        deadline = time.monotonic() + self._shutdown_timeout
         try:
             for runtime in self._sessions.values():
                 runtime.present = False
-            self._wait_for_session_work()
+            if not self._wait_for_session_work(deadline):
+                all_work_stopped = False
             self._collect_work(now)
             for runtime in self._sessions.values():
                 if runtime.lifecycle is SessionLifecycle.ACTIVE:
                     self._schedule_finalization(runtime)
-            self._wait_for_session_work()
+            if not self._wait_for_session_work(deadline):
+                all_work_stopped = False
             self._collect_work(now)
             for runtime in self._sessions.values():
                 if runtime.finalized_at is None:
@@ -385,7 +473,10 @@ class DownloadSupervisor:
                     close_error = close_error or exc
         if self._executor is not None:
             try:
-                self._executor.shutdown(wait=True, cancel_futures=False)
+                self._executor.shutdown(
+                    wait=all_work_stopped,
+                    cancel_futures=not all_work_stopped,
+                )
             except BaseException as exc:
                 close_error = close_error or exc
         if self._controls is not None:
@@ -404,11 +495,21 @@ class DownloadSupervisor:
                 f"supervisor shutdown failed ({type(close_error).__name__})",
             ) from None
 
-    def _wait_for_session_work(self) -> None:
+    def _wait_for_session_work(self, deadline: float) -> bool:
+        all_stopped = True
         for runtime in tuple(self._sessions.values()):
             if runtime.future is not None:
-                with suppress(BaseException):
-                    runtime.future.result()
+                remaining = max(0.0, deadline - time.monotonic())
+                try:
+                    runtime.future.result(timeout=remaining)
+                except FutureTimeout:
+                    all_stopped = False
+                except KeyboardInterrupt:
+                    runtime.future.cancel()
+                    return False
+                except Exception:
+                    continue
+        return all_stopped
 
 
 def _session_id(key: SessionKey) -> str:

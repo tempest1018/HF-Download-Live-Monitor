@@ -1,3 +1,4 @@
+import time
 from collections.abc import Callable
 from concurrent.futures import Future
 from pathlib import Path
@@ -174,6 +175,23 @@ def test_session_cap_is_deterministic() -> None:
     assert [item.repo for item in supervisor.snapshot.sessions] == ["a/repo"]
 
 
+def test_session_cap_preserves_admitted_live_session_when_earlier_candidate_appears() -> None:
+    clock = FakeClock()
+    existing = candidate(9, repo="z/repo")
+    newcomer = candidate(3, repo="a/repo")
+    supervisor = DownloadSupervisor(
+        SequenceDiscovery(((existing,), (newcomer, existing))),
+        max_sessions=1,
+        clock=clock,
+    )
+    supervisor.tick()
+    clock.advance(1)
+    supervisor.tick()
+    assert [(item.repo, item.lifecycle) for item in supervisor.snapshot.sessions] == [
+        ("z/repo", SessionLifecycle.DISCOVERED)
+    ]
+
+
 def test_idle_discovery_backs_off_without_busy_loop() -> None:
     clock = FakeClock()
     discovery = SequenceDiscovery(((), (), ()))
@@ -300,3 +318,25 @@ def test_shutdown_maps_renderer_close_failure_without_leaking_detail() -> None:
         supervisor.shutdown()
     assert caught.value.code == "supervisor_shutdown_failed"
     assert "hf_sensitive" not in caught.value.message
+
+
+def test_shutdown_does_not_wait_forever_for_stuck_session_work() -> None:
+    class StuckExecutor(ImmediateExecutor):
+        def submit(self, fn, /, *args, **kwargs):
+            return Future()
+
+    executor = StuckExecutor()
+    supervisor = DownloadSupervisor(
+        SequenceDiscovery(((candidate(),),)),
+        repository=FakeRepository(),
+        observer=FakeObserver(),
+        engine_factory=ProgressEngine,
+        executor=executor,
+        shutdown_timeout=0.01,
+    )
+    supervisor.tick()
+    started = time.monotonic()
+    supervisor.shutdown()
+    assert time.monotonic() - started < 0.5
+    assert supervisor.snapshot.sessions[0].lifecycle is SessionLifecycle.LOST
+    assert executor.shutdown_calls == [(False, True)]

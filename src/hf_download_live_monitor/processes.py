@@ -68,7 +68,17 @@ class PsutilProcessProvider:
 
     def discover(self) -> tuple[ProcessRecord, ...]:
         records: list[ProcessRecord] = []
-        for process in self._iterator():
+        try:
+            iterator = iter(self._iterator())
+        except (OSError, ValueError, psutil.Error):
+            return ()
+        while True:
+            try:
+                process = next(iterator)
+            except StopIteration:
+                break
+            except (OSError, ValueError, psutil.Error):
+                break
             try:
                 args = tuple(process.cmdline())
                 if not args:

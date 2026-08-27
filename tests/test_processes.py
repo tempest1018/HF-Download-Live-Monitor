@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import psutil
 import pytest
 
 from hf_download_live_monitor.processes import (
@@ -109,3 +110,12 @@ def test_psutil_provider_records_stable_start_token_and_skips_denied_process() -
             "1234.500000000",
         ),
     )
+
+
+def test_psutil_provider_preserves_records_before_iterator_failure() -> None:
+    def processes():
+        yield FakePsutilProcess(41)
+        raise psutil.Error("process table changed")
+
+    records = PsutilProcessProvider(iterator=processes).discover()
+    assert [record.pid for record in records] == [41]
