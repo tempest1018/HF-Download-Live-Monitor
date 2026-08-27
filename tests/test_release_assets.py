@@ -262,6 +262,8 @@ def test_release_acceptance_workflow_is_read_only_and_cross_platform() -> None:
         assert required in rendered
     assert "Verify eight GitHub artifact attestations" in rendered
     assert rendered.count("release-assets/hf-download-live-monitor-") >= 6
+    assert "'$1 == \"pub\" { count++ } END { print count + 0 }'" in rendered
+    assert "'$1 == \"fpr\" { print $10; exit }'" in rendered
     for prohibited in (
         "gh release create",
         "gh release edit",
