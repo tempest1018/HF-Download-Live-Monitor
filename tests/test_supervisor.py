@@ -3,6 +3,8 @@ from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from hf_download_live_monitor.attach import DownloadCandidate
 from hf_download_live_monitor.engine import ProgressEngine
 from hf_download_live_monitor.models import (
@@ -10,6 +12,7 @@ from hf_download_live_monitor.models import (
     DownloadSpec,
     FileObservation,
     ManifestFile,
+    MonitorError,
 )
 from hf_download_live_monitor.processes import ProcessIdentity
 from hf_download_live_monitor.supervisor import DownloadSupervisor
@@ -257,4 +260,43 @@ def test_shutdown_closes_executor_without_signalling_downloaders() -> None:
 
     supervisor.shutdown()
 
-    assert executor.shutdown_calls == [(True, True)]
+    assert executor.shutdown_calls == [(True, False)]
+
+
+def test_shutdown_forces_final_observation_of_active_session() -> None:
+    supervisor = DownloadSupervisor(
+        SequenceDiscovery(((candidate(),),)),
+        repository=FakeRepository(),
+        observer=FakeObserver(),
+        engine_factory=ProgressEngine,
+        executor=ImmediateExecutor(),
+    )
+    supervisor.tick()
+    supervisor.tick()
+    assert supervisor.snapshot.sessions[0].lifecycle is SessionLifecycle.ACTIVE
+
+    supervisor.shutdown()
+
+    assert supervisor.snapshot.sessions[0].lifecycle is SessionLifecycle.COMPLETED
+    assert [event.event for event in supervisor.events][-2:] == [
+        EventType.SESSION_FINALIZED,
+        EventType.SUPERVISOR_STOPPED,
+    ]
+
+
+def test_shutdown_maps_renderer_close_failure_without_leaking_detail() -> None:
+    class Renderer:
+        def render_snapshot(self, snapshot) -> None:
+            pass
+
+        def render_event(self, event) -> None:
+            pass
+
+        def close(self) -> None:
+            raise OSError("token=hf_sensitive")
+
+    supervisor = DownloadSupervisor(SequenceDiscovery(((),)), renderer=Renderer())
+    with pytest.raises(MonitorError) as caught:
+        supervisor.shutdown()
+    assert caught.value.code == "supervisor_shutdown_failed"
+    assert "hf_sensitive" not in caught.value.message

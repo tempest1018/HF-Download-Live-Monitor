@@ -8,6 +8,7 @@ import uuid
 from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Literal, Protocol, cast
 
@@ -354,21 +355,60 @@ class DownloadSupervisor:
             return
         self._closed = True
         now = self._clock()
-        self._emit(EventType.SUPERVISOR_STOPPED, None, now)
-        self._refresh_snapshot(now)
-        if self._renderer is not None:
-            for event in self.drain_events():
-                self._renderer.render_event(event)
-            self._renderer.render_snapshot(self._snapshot)
+        close_error: BaseException | None = None
+        try:
+            for runtime in self._sessions.values():
+                runtime.present = False
+            self._wait_for_session_work()
+            self._collect_work(now)
+            for runtime in self._sessions.values():
+                if runtime.lifecycle is SessionLifecycle.ACTIVE:
+                    self._schedule_finalization(runtime)
+            self._wait_for_session_work()
+            self._collect_work(now)
+            for runtime in self._sessions.values():
+                if runtime.finalized_at is None:
+                    self._finish(runtime, SessionLifecycle.LOST, now)
+            self._emit(EventType.SUPERVISOR_STOPPED, None, now)
+            self._refresh_snapshot(now)
+            if self._renderer is not None:
+                for event in self.drain_events():
+                    self._renderer.render_event(event)
+                self._renderer.render_snapshot(self._snapshot)
+        except BaseException as exc:
+            close_error = exc
         for runtime in self._sessions.values():
             if runtime.engine is not None:
-                runtime.engine.close()
+                try:
+                    runtime.engine.close()
+                except BaseException as exc:
+                    close_error = close_error or exc
         if self._executor is not None:
-            self._executor.shutdown(wait=True, cancel_futures=True)
+            try:
+                self._executor.shutdown(wait=True, cancel_futures=False)
+            except BaseException as exc:
+                close_error = close_error or exc
         if self._controls is not None:
-            self._controls.close()
+            try:
+                self._controls.close()
+            except BaseException as exc:
+                close_error = close_error or exc
         if self._renderer is not None:
-            self._renderer.close()
+            try:
+                self._renderer.close()
+            except BaseException as exc:
+                close_error = close_error or exc
+        if close_error is not None:
+            raise MonitorError(
+                "supervisor_shutdown_failed",
+                f"supervisor shutdown failed ({type(close_error).__name__})",
+            ) from None
+
+    def _wait_for_session_work(self) -> None:
+        for runtime in tuple(self._sessions.values()):
+            if runtime.future is not None:
+                with suppress(BaseException):
+                    runtime.future.result()
 
 
 def _session_id(key: SessionKey) -> str:
