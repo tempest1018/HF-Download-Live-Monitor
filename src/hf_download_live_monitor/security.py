@@ -9,6 +9,10 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 _REDACTED = "<redacted>"
 _TOKEN_ASSIGNMENT = re.compile(r"(?i)(\b(?:hf_token|token|access_token)\s*=\s*)([^&\s]+)")
 _BEARER = re.compile(r"(?i)(\bbearer\s+)([^\s,;]+)")
+_TOKEN_SHAPE = re.compile(r"(?i)\bhf_[a-z0-9]{20,}\b")
+_WINDOWS_USER_PATH = re.compile(r"(?i)\b[A-Z]:[\\/]+Users[\\/]+[^\\/\s]+(?:[\\/][^\s]*)?")
+_POSIX_HOME_PATH = re.compile(r"/(?:home|Users)/[^/\s]+(?:/[^\s]*)?")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def redact_args(args: Sequence[str]) -> tuple[str, ...]:
@@ -30,6 +34,16 @@ def redact_args(args: Sequence[str]) -> tuple[str, ...]:
 def redact_text(value: str) -> str:
     value = _TOKEN_ASSIGNMENT.sub(rf"\1{_REDACTED}", value)
     return _BEARER.sub(rf"\1{_REDACTED}", value)
+
+
+def sanitize_persisted_diagnostic(value: str) -> str:
+    """Return a bounded diagnostic safe for durable local storage and export."""
+    value = redact_text(value)
+    value = _TOKEN_SHAPE.sub(_REDACTED, value)
+    value = _WINDOWS_USER_PATH.sub("<local-path>", value)
+    value = _POSIX_HOME_PATH.sub("<local-path>", value)
+    value = _CONTROL.sub("", value)
+    return value[:512] or "history diagnostic unavailable"
 
 
 def resolve_repo_path(root: Path, filename: str) -> Path:

@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from hf_download_live_monitor.security import redact_args, redact_text, resolve_repo_path
+from hf_download_live_monitor.security import (
+    redact_args,
+    redact_text,
+    resolve_repo_path,
+    sanitize_persisted_diagnostic,
+)
 
 
 @pytest.mark.parametrize(
@@ -48,3 +53,12 @@ def test_resolve_repo_path_rejects_sibling_prefix_trick(tmp_path: Path) -> None:
     root = tmp_path / "download"
     with pytest.raises(ValueError, match="unsafe repository path"):
         resolve_repo_path(root, "../download-other/file.bin")
+
+
+def test_persisted_diagnostic_removes_tokens_paths_and_controls() -> None:
+    value = "failed at C:\\Users\\person\\secret with token=hf_" + "x" * 40 + "\x00"
+    sanitized = sanitize_persisted_diagnostic(value)
+    assert "person" not in sanitized
+    assert "hf_" not in sanitized
+    assert "\x00" not in sanitized
+    assert len(sanitized) <= 512
