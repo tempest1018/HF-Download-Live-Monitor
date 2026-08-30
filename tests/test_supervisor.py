@@ -9,6 +9,7 @@ import pytest
 
 from hf_download_live_monitor.attach import DownloadCandidate
 from hf_download_live_monitor.engine import ProgressEngine
+from hf_download_live_monitor.history_models import HistoryOutcome
 from hf_download_live_monitor.models import (
     DownloadPlan,
     DownloadSpec,
@@ -102,6 +103,38 @@ class FakeObserver:
         )
 
 
+class RecordingHistory:
+    def __init__(self) -> None:
+        self.started: list[tuple[str, str, float]] = []
+        self.checkpoints: list[tuple[str, bool, HistoryOutcome | None]] = []
+        self.finished: list[tuple[str, HistoryOutcome]] = []
+        self.closed = False
+
+    def start(self, spec: DownloadSpec, mode: str, observed_at_utc: float) -> str:
+        self.started.append((spec.repo, mode, observed_at_utc))
+        return f"persistent-{len(self.started)}"
+
+    def checkpoint(
+        self,
+        session_id: str,
+        snapshot: object,
+        observed_at_utc: float,
+        *,
+        final: bool,
+        outcome: HistoryOutcome | None = None,
+    ) -> None:
+        self.checkpoints.append((session_id, final, outcome))
+
+    def finalize(self, session_id: str, outcome: HistoryOutcome, observed_at_utc: float) -> None:
+        self.finished.append((session_id, outcome))
+
+    def interrupt(self, session_id: str, observed_at_utc: float) -> None:
+        self.finished.append((session_id, HistoryOutcome.INTERRUPTED))
+
+    def close(self) -> None:
+        self.closed = True
+
+
 def candidate(
     pid: int = 7,
     start_token: str = "100",
@@ -129,6 +162,25 @@ def test_supervisor_adds_new_sessions_and_prevents_pid_reuse_merge() -> None:
         SessionLifecycle.DISCOVERED,
         SessionLifecycle.LOST,
     }
+
+
+def test_supervisor_records_sessions_without_process_identity() -> None:
+    clock = FakeClock()
+    history = RecordingHistory()
+    supervisor = DownloadSupervisor(
+        SequenceDiscovery(((candidate(pid=123), candidate(pid=456)),)),
+        clock=clock,
+        utc_clock=lambda: 100.0,
+        history=history,
+    )
+    supervisor.tick()
+    assert history.started == [
+        ("owner/repo", "attach", 100.0),
+        ("owner/repo", "attach", 100.0),
+    ]
+    assert all(session_id not in {"123", "456"} for session_id, _ in history.finished)
+    supervisor.shutdown()
+    assert history.closed
 
 
 def test_finalized_session_is_removed_only_after_retention() -> None:

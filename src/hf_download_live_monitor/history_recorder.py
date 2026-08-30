@@ -32,6 +32,10 @@ class HistoryRecorder(Protocol):
 
     def interrupt(self, session_id: str, observed_at_utc: float) -> None: ...
 
+    def finalize(
+        self, session_id: str, outcome: HistoryOutcome, observed_at_utc: float
+    ) -> None: ...
+
     def close(self) -> None: ...
 
 
@@ -51,6 +55,11 @@ class NullHistoryRecorder:
         return None
 
     def interrupt(self, session_id: str, observed_at_utc: float) -> None:
+        return None
+
+    def finalize(
+        self, session_id: str, outcome: HistoryOutcome, observed_at_utc: float
+    ) -> None:
         return None
 
     def close(self) -> None:
@@ -180,12 +189,17 @@ class SQLiteHistoryRecorder:
             self._disable(exc)
 
     def interrupt(self, session_id: str, observed_at_utc: float) -> None:
+        self.finalize(session_id, HistoryOutcome.INTERRUPTED, observed_at_utc)
+
+    def finalize(
+        self, session_id: str, outcome: HistoryOutcome, observed_at_utc: float
+    ) -> None:
         recording = self._recordings.pop(session_id, None)
         if not self.available or recording is None:
             return
         try:
             self._store.finalize(
-                recording.checkpoint.finish(HistoryOutcome.INTERRUPTED, observed_at_utc)
+                recording.checkpoint.finish(outcome, observed_at_utc)
             )
         except Exception as exc:
             self._disable(exc)

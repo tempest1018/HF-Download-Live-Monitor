@@ -41,6 +41,7 @@ def test_null_recorder_is_inert() -> None:
     recorder = NullHistoryRecorder()
     assert recorder.start(snapshot().spec, "watch", 100.0) == ""
     recorder.checkpoint("", snapshot(), 101.0, final=False)
+    recorder.finalize("", HistoryOutcome.LOST, 101.5)
     recorder.interrupt("", 102.0)
     recorder.close()
 
