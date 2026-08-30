@@ -275,9 +275,7 @@ def _validate_outputs(plain: bool, json_output: bool, jsonl: bool) -> None:
 
 def _history_override(record: bool, no_record: bool) -> bool | None:
     if record and no_record:
-        raise typer.BadParameter(
-            "--record-history and --no-record-history cannot be used together"
-        )
+        raise typer.BadParameter("--record-history and --no-record-history cannot be used together")
     if record:
         return True
     if no_record:

@@ -100,12 +100,20 @@ Define terminal outcomes `completed`, `failed`, `lost`, `cancelled`, and `interr
     ("platform", "environment", "suffix"),
     [
         ("win32", {"LOCALAPPDATA": "C:/Local"}, "HF Download Live Monitor/history"),
-        ("darwin", {"HOME": "/Users/tester"}, "Library/Application Support/HF Download Live Monitor/history"),
+        (
+            "darwin",
+            {"HOME": "/Users/tester"},
+            "Library/Application Support/HF Download Live Monitor/history",
+        ),
         ("linux", {"HOME": "/home/tester"}, ".local/state/hf-download-live-monitor/history"),
     ],
 )
 def test_default_history_root_is_platform_native(platform, environment, suffix) -> None:
-    assert resolve_history_paths(platform=platform, environment=environment).directory.as_posix().endswith(suffix)
+    assert (
+        resolve_history_paths(platform=platform, environment=environment)
+        .directory.as_posix()
+        .endswith(suffix)
+    )
 
 
 def test_relative_override_is_rejected() -> None:
@@ -124,7 +132,9 @@ class HistoryPaths:
 
 
 def resolve_history_paths(
-    *, override: Path | None = None, platform: str = sys.platform,
+    *,
+    override: Path | None = None,
+    platform: str = sys.platform,
     environment: Mapping[str, str] = os.environ,
 ) -> HistoryPaths:
     if override is not None and not override.is_absolute():
@@ -285,7 +295,9 @@ Expected: FAIL with missing store methods.
 ```python
 def delete(self, session_id: str) -> bool:
     with self._transaction():
-        cursor = self._connection.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+        cursor = self._connection.execute(
+            "DELETE FROM sessions WHERE session_id = ?", (session_id,)
+        )
     return cursor.rowcount == 1
 ```
 
@@ -371,14 +383,19 @@ Expected: FAIL because recorder implementations do not exist.
 ```python
 class HistoryRecorder(Protocol):
     def start(self, spec: DownloadSpec, mode: str, observed_at_utc: float) -> str: ...
-    def checkpoint(self, session_id: str, snapshot: ProgressSnapshot, observed_at_utc: float, *, final: bool) -> None: ...
+    def checkpoint(
+        self, session_id: str, snapshot: ProgressSnapshot, observed_at_utc: float, *, final: bool
+    ) -> None: ...
     def interrupt(self, session_id: str, observed_at_utc: float) -> None: ...
     def close(self) -> None: ...
 
 
 class NullHistoryRecorder:
-    def start(self, spec, mode, observed_at_utc): return ""
-    def checkpoint(self, session_id, snapshot, observed_at_utc, *, final): return None
+    def start(self, spec, mode, observed_at_utc):
+        return ""
+
+    def checkpoint(self, session_id, snapshot, observed_at_utc, *, final):
+        return None
 ```
 
 Add `sanitize_persisted_diagnostic()` to redact credentials, remove control characters, replace absolute paths, reject token-shaped residues, and limit output to 512 characters. Derive average/peak rate, waiting duration, longest no-progress interval, aggregate counts, and final outcome without persisting file-level data.
@@ -486,7 +503,9 @@ git commit -S -m "feat: connect local history to watch and run"
 ```python
 def test_supervisor_records_each_session_without_persisting_process_identity() -> None:
     history = RecordingHistoryRecorder()
-    supervisor = make_supervisor(history=history, candidates=(candidate(pid=123), candidate(pid=456)))
+    supervisor = make_supervisor(
+        history=history, candidates=(candidate(pid=123), candidate(pid=456))
+    )
     supervisor.tick()
     assert len(history.started) == 2
     assert all(item.persistent_id not in {"123", "456"} for item in history.started)
@@ -548,7 +567,23 @@ git commit -S -m "feat: record continuous attachment outcomes"
 def test_help_exposes_history_without_enabling_it() -> None:
     result = runner.invoke(cli, ["history", "--help"])
     assert result.exit_code == 0
-    assert all(name in result.stdout for name in ("status", "enable", "disable", "list", "show", "export", "delete", "clear", "purge", "vacuum", "recover", "reset"))
+    assert all(
+        name in result.stdout
+        for name in (
+            "status",
+            "enable",
+            "disable",
+            "list",
+            "show",
+            "export",
+            "delete",
+            "clear",
+            "purge",
+            "vacuum",
+            "recover",
+            "reset",
+        )
+    )
 
 
 def test_watch_default_does_not_create_history(tmp_path: Path, monkeypatch) -> None:
@@ -570,7 +605,9 @@ history_cli = typer.Typer(no_args_is_help=True, help="Control private local hist
 cli.add_typer(history_cli, name="history")
 
 
-def resolve_history_policy(*, record: bool | None, include_identifiers: bool, path: Path | None) -> EffectiveHistoryPolicy:
+def resolve_history_policy(
+    *, record: bool | None, include_identifiers: bool, path: Path | None
+) -> EffectiveHistoryPolicy:
     if include_identifiers and record is False:
         raise typer.BadParameter("--include-identifiers requires history recording")
     # Read existing settings without creating state, then apply invocation-only overrides.
@@ -633,7 +670,9 @@ Expected: FAIL because history renderers do not exist.
 - [ ] **Step 3: Implement compact tables and versioned JSON/JSONL**
 
 ```python
-def history_record_to_dict(record: HistoryRecord, *, include_identifiers: bool = False) -> dict[str, object]:
+def history_record_to_dict(
+    record: HistoryRecord, *, include_identifiers: bool = False
+) -> dict[str, object]:
     payload = {
         "schema_version": 1,
         "kind": "history_record",
@@ -685,7 +724,13 @@ git commit -S -m "feat: render sanitized history and diagnostics"
 ```python
 def test_manual_documents_history_control_and_defaults() -> None:
     manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
-    for phrase in ("disabled by default", "30 days", "64 MiB", "history purge", "--include-identifiers"):
+    for phrase in (
+        "disabled by default",
+        "30 days",
+        "64 MiB",
+        "history purge",
+        "--include-identifiers",
+    ):
         assert phrase in manual
 
 
