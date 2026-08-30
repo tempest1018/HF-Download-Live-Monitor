@@ -96,7 +96,7 @@ def test_identifier_opt_in_is_scoped_to_recorder(tmp_path: Path) -> None:
     record = store.get_record(session_id)
     assert record is not None
     assert record.checkpoint.repository_identifier == "public-owner/public-repo"
-    assert record.checkpoint.destination_identifier == str(current.spec.local_dir)
+    assert record.checkpoint.destination_identifier == str(current.spec.local_dir.resolve())
     recorder.close()
 
 
