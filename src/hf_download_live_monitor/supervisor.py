@@ -11,6 +11,7 @@ from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Executor, Future
 from concurrent.futures import TimeoutError as FutureTimeout
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, cast
 
@@ -19,6 +20,8 @@ from hf_download_live_monitor.attach import DownloadCandidate, SessionKey
 from hf_download_live_monitor.controls import SupervisorDisplayState
 from hf_download_live_monitor.engine import ProgressEngine
 from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
+from hf_download_live_monitor.history_models import HistoryOutcome
+from hf_download_live_monitor.history_recorder import HistoryRecorder, NullHistoryRecorder
 from hf_download_live_monitor.models import DownloadPlan, MonitorError, ProgressSnapshot
 from hf_download_live_monitor.supervisor_models import (
     DiscoveryHealth,
@@ -118,6 +121,7 @@ class _DaemonExecutor(Executor):
 class _SessionRuntime:
     candidate: DownloadCandidate
     session_id: str
+    history_id: str = ""
     lifecycle: SessionLifecycle = SessionLifecycle.DISCOVERED
     finalized_at: float | None = None
     present: bool = True
@@ -152,6 +156,7 @@ class DownloadSupervisor:
         retention: float = 15.0,
         max_sessions: int = 32,
         clock: Callable[[], float] = time.monotonic,
+        utc_clock: Callable[[], float] = time.time,
         run_id: str | None = None,
         repository: Repository | None = None,
         observer: Observer | None = None,
@@ -163,6 +168,7 @@ class DownloadSupervisor:
         display_state: SupervisorDisplayState | None = None,
         sleeper: Callable[[float], None] = time.sleep,
         shutdown_timeout: float = 2.0,
+        history: HistoryRecorder | None = None,
     ) -> None:
         if discovery_refresh <= 0:
             raise ValueError("discovery refresh must be positive")
@@ -184,6 +190,7 @@ class DownloadSupervisor:
         self._retention = retention
         self._max_sessions = max_sessions
         self._clock = clock
+        self._utc_clock = utc_clock
         self._repository = repository
         self._observer = observer
         self._engine_factory = engine_factory
@@ -206,6 +213,7 @@ class DownloadSupervisor:
         self._idle_interval = discovery_refresh
         self._snapshot = SupervisorSnapshot.build(clock(), ())
         self._closed = False
+        self._history = history or NullHistoryRecorder()
 
     @property
     def snapshot(self) -> SupervisorSnapshot:
@@ -280,7 +288,11 @@ class DownloadSupervisor:
             if key in self._sessions:
                 self._sessions[key].present = True
                 continue
-            runtime = _SessionRuntime(candidate, _session_id(key))
+            runtime = _SessionRuntime(
+                candidate,
+                _session_id(key),
+                self._safe_history_start(candidate),
+            )
             self._sessions[key] = runtime
             self._emit(EventType.SESSION_ADDED, runtime, now)
             self._schedule_prepare(runtime)
@@ -373,6 +385,14 @@ class DownloadSupervisor:
                 continue
             runtime.next_refresh = now + self._refresh
             self._emit(EventType.PROGRESS, runtime, now)
+            if runtime.history_id:
+                with suppress(Exception):
+                    self._history.checkpoint(
+                        runtime.history_id,
+                        runtime.progress,
+                        self._utc_clock(),
+                        final=False,
+                    )
 
     def _observe(
         self,
@@ -394,6 +414,20 @@ class DownloadSupervisor:
     ) -> None:
         runtime.lifecycle = lifecycle
         runtime.finalized_at = now
+        if runtime.history_id:
+            outcome = _history_outcome(lifecycle)
+            with suppress(Exception):
+                if runtime.progress is None:
+                    self._history.finalize(runtime.history_id, outcome, self._utc_clock())
+                else:
+                    self._history.checkpoint(
+                        runtime.history_id,
+                        runtime.progress,
+                        self._utc_clock(),
+                        final=True,
+                        outcome=outcome,
+                    )
+            runtime.history_id = ""
         self._emit(EventType.SESSION_FINALIZED, runtime, now)
 
     def _expire_sessions(self, now: float) -> None:
@@ -488,11 +522,19 @@ class DownloadSupervisor:
                 self._renderer.close()
             except BaseException as exc:
                 close_error = close_error or exc
+        with suppress(Exception):
+            self._history.close()
         if close_error is not None:
             raise MonitorError(
                 "supervisor_shutdown_failed",
                 f"supervisor shutdown failed ({type(close_error).__name__})",
             ) from None
+
+    def _safe_history_start(self, candidate: DownloadCandidate) -> str:
+        try:
+            return self._history.start(candidate.spec, "attach", self._utc_clock())
+        except Exception:
+            return ""
 
     def _close_engines(
         self,
@@ -574,3 +616,12 @@ def _final_lifecycle(snapshot: ProgressSnapshot) -> SessionLifecycle:
     if snapshot.expected_bytes > 0 and snapshot.downloaded_bytes >= snapshot.expected_bytes:
         return SessionLifecycle.COMPLETED
     return SessionLifecycle.LOST
+
+
+def _history_outcome(lifecycle: SessionLifecycle) -> HistoryOutcome:
+    mapping = {
+        SessionLifecycle.COMPLETED: HistoryOutcome.COMPLETED,
+        SessionLifecycle.FAILED: HistoryOutcome.FAILED,
+        SessionLifecycle.LOST: HistoryOutcome.LOST,
+    }
+    return mapping.get(lifecycle, HistoryOutcome.INTERRUPTED)

@@ -6,6 +6,7 @@ from hf_download_live_monitor.app import WatchApplication
 from hf_download_live_monitor.controls import DisplayState
 from hf_download_live_monitor.engine import ProgressEngine
 from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
+from hf_download_live_monitor.history_models import HistoryOutcome
 from hf_download_live_monitor.layout import ViewMode
 from hf_download_live_monitor.models import (
     DownloadPlan,
@@ -54,6 +55,32 @@ class RecordingRenderer:
         self.state = state
 
 
+class RecordingHistory:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    def start(self, spec: DownloadSpec, mode: str, observed_at_utc: float) -> str:
+        self.calls.append(("start", (spec.repo, mode, observed_at_utc)))
+        return "history-session"
+
+    def checkpoint(
+        self,
+        session_id: str,
+        snapshot: ProgressSnapshot,
+        observed_at_utc: float,
+        *,
+        final: bool,
+        outcome: HistoryOutcome | None = None,
+    ) -> None:
+        self.calls.append(("checkpoint", (session_id, observed_at_utc, final, outcome)))
+
+    def interrupt(self, session_id: str, observed_at_utc: float) -> None:
+        self.calls.append(("interrupt", (session_id, observed_at_utc)))
+
+    def close(self) -> None:
+        self.calls.append(("close", None))
+
+
 def test_once_renders_one_snapshot_and_closes() -> None:
     renderer = RecordingRenderer()
     app = WatchApplication(
@@ -68,6 +95,27 @@ def test_once_renders_one_snapshot_and_closes() -> None:
     assert app.run(DownloadSpec("owner/repo", Path("out")), once=True) == 0
     assert len(renderer.snapshots) == 1
     assert renderer.closed
+
+
+def test_once_records_start_final_checkpoint_and_close() -> None:
+    history = RecordingHistory()
+    app = WatchApplication(
+        repository=FakeRepository(),
+        observer=FakeObserver(),
+        engine=ProgressEngine(),
+        renderer=RecordingRenderer(),
+        clock=lambda: 5.0,
+        utc_clock=lambda: 100.0,
+        sleeper=lambda _: None,
+        history=history,
+        mode="watch",
+    )
+    assert app.run(DownloadSpec("owner/repo", Path("out")), once=True) == 0
+    assert history.calls == [
+        ("start", ("owner/repo", "watch", 100.0)),
+        ("checkpoint", ("history-session", 100.0, True, None)),
+        ("close", None),
+    ]
 
 
 def test_close_failure_without_primary_error_is_stable_monitor_error() -> None:

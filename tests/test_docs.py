@@ -310,3 +310,22 @@ def test_continuous_attach_all_contract_is_documented() -> None:
         "lost",
     ):
         assert value in text
+
+
+def test_manual_documents_history_control_and_defaults() -> None:
+    manual = Path("docs/user-manual.md").read_text(encoding="utf-8")
+    for phrase in (
+        "disabled by default",
+        "30 days",
+        "64 MiB",
+        "history purge",
+        "--include-identifiers",
+    ):
+        assert phrase in manual
+
+
+def test_second_pc_guide_never_requests_sensitive_evidence() -> None:
+    guide = Path("docs/second-pc-vm-acceptance.md").read_text(encoding="utf-8")
+    assert "fresh machine or VM snapshot" in guide
+    assert "sanitize" in guide.lower()
+    assert "environment dump" not in guide.lower()
