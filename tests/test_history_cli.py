@@ -65,3 +65,18 @@ def test_monitor_help_exposes_history_privacy_options() -> None:
         assert "--record-history" in result.stdout
         assert "--include-identifiers" in result.stdout
         assert "--history-path" in result.stdout
+
+
+def test_reset_preserves_corrupt_database(tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    database = state / "history.sqlite3"
+    database.write_bytes(b"corrupt evidence")
+    result = runner.invoke(
+        cli,
+        ["history", "reset", "--preserve-corrupt", "--yes"],
+        env={"HF_DOWNLOAD_LIVE_MONITOR_HISTORY_DIR": str(state)},
+    )
+    assert result.exit_code == 0
+    assert database.exists()
+    assert tuple(state.glob("history.sqlite3.corrupt-*"))

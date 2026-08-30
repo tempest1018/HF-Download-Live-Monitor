@@ -49,3 +49,18 @@ def test_recovery_requires_absolute_output(tmp_path: Path) -> None:
     with pytest.raises(MonitorError, match="absolute"):
         store.recover(Path("relative.db"))
     store.close()
+
+
+def test_reset_preserves_corrupt_source_and_creates_enabled_store(tmp_path: Path) -> None:
+    paths = paths_under(tmp_path)
+    paths.directory.mkdir(parents=True)
+    original = b"corrupt history evidence"
+    paths.database.write_bytes(original)
+
+    preserved, replacement = HistoryStore.reset_preserving_corrupt(paths, now_utc=100.0)
+
+    assert preserved.read_bytes() == original
+    assert preserved.parent == paths.directory
+    assert replacement.load_config().enabled is True
+    assert replacement.health() is HistoryHealth.HEALTHY
+    replacement.close()

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from hf_download_live_monitor.errors import ErrorCategory
 from hf_download_live_monitor.history_models import HistoryOutcome
 from hf_download_live_monitor.history_paths import resolve_history_paths
 from hf_download_live_monitor.history_recorder import NullHistoryRecorder, SQLiteHistoryRecorder
@@ -8,6 +9,7 @@ from hf_download_live_monitor.models import (
     DownloadSpec,
     FileProgress,
     FileState,
+    MonitorError,
     ProgressSnapshot,
 )
 
@@ -121,4 +123,28 @@ def test_interrupt_marks_active_record(tmp_path: Path) -> None:
     record = store.get_record(session_id)
     assert record is not None
     assert record.checkpoint.outcome is HistoryOutcome.INTERRUPTED
+    recorder.close()
+
+
+def test_diagnostic_is_sanitized_and_loaded_with_record(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    recorder = SQLiteHistoryRecorder(store)
+    session_id = recorder.start(snapshot().spec, "watch", 100.0)
+    recorder.diagnostic(
+        session_id,
+        MonitorError(
+            "download_failed",
+            "token hf_abcdefghijklmnopqrstuvwxyz123456 at C:/Sensitive/private.txt",
+            recoverable=True,
+            category=ErrorCategory.DOWNLOADER,
+        ),
+        101.0,
+    )
+    record = store.get_record(session_id)
+    assert record is not None
+    assert len(record.diagnostics) == 1
+    diagnostic = record.diagnostics[0]
+    assert diagnostic.code == "download_failed"
+    assert "hf_" not in diagnostic.message
+    assert "Sensitive" not in diagnostic.message
     recorder.close()

@@ -16,6 +16,7 @@ from hf_download_live_monitor.errors import ErrorCategory
 from hf_download_live_monitor.history_models import (
     HistoryCheckpoint,
     HistoryConfig,
+    HistoryDiagnostic,
     HistoryHealth,
     HistoryOutcome,
     HistoryQuery,
@@ -33,8 +34,7 @@ _KEY_BYTES = 32
 _BUSY_TIMEOUT_MS = 100
 MIGRATIONS: dict[int, tuple[str, ...]] = {
     1: (
-        "CREATE INDEX IF NOT EXISTS sessions_outcome_idx "
-        "ON sessions(outcome, updated_at_utc DESC)",
+        "CREATE INDEX IF NOT EXISTS sessions_outcome_idx ON sessions(outcome, updated_at_utc DESC)",
     ),
 }
 _SCHEMA = """
@@ -264,6 +264,24 @@ class HistoryStore:
                 values,
             )
 
+    def add_diagnostic(self, session_id: str, diagnostic: HistoryDiagnostic) -> None:
+        with self._transaction():
+            self._connection.execute(
+                """
+                INSERT INTO diagnostics(
+                  session_id, observed_at_utc, category, code, message, recoverable
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    diagnostic.observed_at_utc,
+                    diagnostic.category,
+                    diagnostic.code,
+                    diagnostic.message,
+                    int(diagnostic.recoverable),
+                ),
+            )
+
     def finalize(self, checkpoint: HistoryCheckpoint) -> None:
         if checkpoint.outcome is None or checkpoint.ended_at_utc is None:
             raise ValueError("final history checkpoint requires outcome and end time")
@@ -273,7 +291,7 @@ class HistoryStore:
         row = self._connection.execute(
             "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
         ).fetchone()
-        return None if row is None else HistoryRecord(_row_to_checkpoint(row))
+        return None if row is None else self._record_from_row(row)
 
     def list_records(self, query: HistoryQuery) -> tuple[HistoryRecord, ...]:
         clauses: list[str] = []
@@ -294,7 +312,27 @@ class HistoryStore:
             f"SELECT * FROM sessions{where} ORDER BY updated_at_utc DESC, session_id LIMIT ?",
             parameters,
         )
-        return tuple(HistoryRecord(_row_to_checkpoint(row)) for row in rows)
+        return tuple(self._record_from_row(row) for row in rows)
+
+    def _record_from_row(self, row: sqlite3.Row) -> HistoryRecord:
+        diagnostics = tuple(
+            HistoryDiagnostic(
+                observed_at_utc=float(item["observed_at_utc"]),
+                category=str(item["category"]),
+                code=str(item["code"]),
+                message=str(item["message"]),
+                recoverable=bool(item["recoverable"]),
+            )
+            for item in self._connection.execute(
+                """
+                SELECT observed_at_utc, category, code, message, recoverable
+                FROM diagnostics WHERE session_id = ?
+                ORDER BY observed_at_utc, id LIMIT 100
+                """,
+                (str(row["session_id"]),),
+            )
+        )
+        return HistoryRecord(_row_to_checkpoint(row), diagnostics)
 
     def delete(self, session_id: str) -> bool:
         with self._transaction():
@@ -402,6 +440,40 @@ class HistoryStore:
                 destination.close()
         if os.name != "nt":
             output.chmod(0o600)
+
+    @classmethod
+    def reset_preserving_corrupt(
+        cls, paths: HistoryPaths, *, now_utc: float | None = None
+    ) -> tuple[Path, HistoryStore]:
+        validate_history_paths(paths)
+        if inspect_history_health(paths) is not HistoryHealth.CORRUPT:
+            raise _store_error("history_reset_refused", "history reset requires a corrupt database")
+        stamp = time.strftime(
+            "%Y%m%dT%H%M%SZ", time.gmtime(time.time() if now_utc is None else now_utc)
+        )
+        preserved = paths.database.with_name(f"{paths.database.name}.corrupt-{stamp}")
+        moves: list[tuple[Path, Path]] = []
+        sources = (
+            paths.database,
+            Path(f"{paths.database}-wal"),
+            Path(f"{paths.database}-shm"),
+        )
+        for source in sources:
+            if source.exists():
+                target = source.with_name(f"{source.name}.corrupt-{stamp}")
+                if target.exists():
+                    raise _store_error(
+                        "history_reset_refused", "preserved history target already exists"
+                    )
+                moves.append((source, target))
+        for source, target in moves:
+            source.replace(target)
+        replacement = cls.open(paths, create=True)
+        if replacement is None:  # pragma: no cover - create=True guarantees a store
+            raise _store_error("history_reset_failed", "history reset failed")
+        config = replacement.load_config()
+        replacement.save_config(HistoryConfig(True, config.retention_days, config.max_size_bytes))
+        return preserved, replacement
 
     def purge(self) -> int:
         self.close()

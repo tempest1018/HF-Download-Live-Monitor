@@ -96,9 +96,7 @@ def enable(history_path: Path | None = typer.Option(None, "--history-path")) -> 
     if store is None:
         raise typer.Exit(code=1)
     config = store.load_config()
-    store.save_config(
-        HistoryConfig(True, config.retention_days, config.max_size_bytes)
-    )
+    store.save_config(HistoryConfig(True, config.retention_days, config.max_size_bytes))
     store.close()
     typer.echo("Local history enabled. Readable identifiers remain disabled by default.")
 
@@ -110,9 +108,7 @@ def disable(history_path: Path | None = typer.Option(None, "--history-path")) ->
         typer.echo("Local history is already disabled.")
         return
     config = store.load_config()
-    store.save_config(
-        HistoryConfig(False, config.retention_days, config.max_size_bytes)
-    )
+    store.save_config(HistoryConfig(False, config.retention_days, config.max_size_bytes))
     store.close()
     typer.echo("Local history disabled; existing user-owned records were retained.")
 
@@ -230,9 +226,7 @@ def clear(
     try:
         before_date = date.fromisoformat(before)
     except ValueError as exc:
-        raise typer.BadParameter(
-            "must use YYYY-MM-DD", param_hint="--before"
-        ) from exc
+        raise typer.BadParameter("must use YYYY-MM-DD", param_hint="--before") from exc
     _confirm(f"Delete local history before {before_date.isoformat()} UTC?", yes=yes)
     cutoff = datetime.combine(before_date, time.min, tzinfo=timezone.utc).timestamp()
     store = _store(history_path, create=False)
@@ -285,9 +279,10 @@ def reset(
     if not preserve_corrupt:
         raise typer.BadParameter("reset requires --preserve-corrupt")
     _confirm("Preserve corrupt files and create a clean local store?", yes=yes)
-    raise typer.BadParameter(
-        "use history recover or purge; reset is unavailable for healthy stores"
-    )
+    paths = resolve_history_paths(override=history_path)
+    preserved, store = HistoryStore.reset_preserving_corrupt(paths)
+    store.close()
+    typer.echo(f"Preserved corrupt history as {preserved.name}; created a clean store.")
 
 
 def _confirm(message: str, *, yes: bool) -> None:

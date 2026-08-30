@@ -11,6 +11,7 @@ _TOKEN_ASSIGNMENT = re.compile(r"(?i)(\b(?:hf_token|token|access_token)\s*=\s*)(
 _BEARER = re.compile(r"(?i)(\bbearer\s+)([^\s,;]+)")
 _TOKEN_SHAPE = re.compile(r"(?i)\bhf_[a-z0-9]{20,}\b")
 _WINDOWS_USER_PATH = re.compile(r"(?i)\b[A-Z]:[\\/]+Users[\\/]+[^\\/\s]+(?:[\\/][^\s]*)?")
+_WINDOWS_ABSOLUTE_PATH = re.compile(r"(?i)\b[A-Z]:[\\/]+[^\s]*")
 _POSIX_HOME_PATH = re.compile(r"/(?:home|Users)/[^/\s]+(?:/[^\s]*)?")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
@@ -41,6 +42,7 @@ def sanitize_persisted_diagnostic(value: str) -> str:
     value = redact_text(value)
     value = _TOKEN_SHAPE.sub(_REDACTED, value)
     value = _WINDOWS_USER_PATH.sub("<local-path>", value)
+    value = _WINDOWS_ABSOLUTE_PATH.sub("<local-path>", value)
     value = _POSIX_HOME_PATH.sub("<local-path>", value)
     value = _CONTROL.sub("", value)
     return value[:512] or "history diagnostic unavailable"

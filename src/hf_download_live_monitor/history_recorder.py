@@ -10,9 +10,14 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 from hf_download_live_monitor.errors import ErrorCategory
-from hf_download_live_monitor.history_models import HistoryCheckpoint, HistoryOutcome
+from hf_download_live_monitor.history_models import (
+    HistoryCheckpoint,
+    HistoryDiagnostic,
+    HistoryOutcome,
+)
 from hf_download_live_monitor.history_store import HistoryStore
 from hf_download_live_monitor.models import DownloadSpec, MonitorError, ProgressSnapshot
+from hf_download_live_monitor.security import sanitize_persisted_diagnostic
 
 _CHECKPOINT_INTERVAL = 5.0
 
@@ -31,6 +36,8 @@ class HistoryRecorder(Protocol):
     ) -> None: ...
 
     def interrupt(self, session_id: str, observed_at_utc: float) -> None: ...
+
+    def diagnostic(self, session_id: str, error: MonitorError, observed_at_utc: float) -> None: ...
 
     def finalize(
         self, session_id: str, outcome: HistoryOutcome, observed_at_utc: float
@@ -57,9 +64,10 @@ class NullHistoryRecorder:
     def interrupt(self, session_id: str, observed_at_utc: float) -> None:
         return None
 
-    def finalize(
-        self, session_id: str, outcome: HistoryOutcome, observed_at_utc: float
-    ) -> None:
+    def diagnostic(self, session_id: str, error: MonitorError, observed_at_utc: float) -> None:
+        return None
+
+    def finalize(self, session_id: str, outcome: HistoryOutcome, observed_at_utc: float) -> None:
         return None
 
     def close(self) -> None:
@@ -99,9 +107,7 @@ class SQLiteHistoryRecorder:
         if not self.available:
             return ""
         session_id = str(uuid.uuid4())
-        repository_hmac, repository_label = self._store.pseudonymize(
-            spec.repo, label="repository"
-        )
+        repository_hmac, repository_label = self._store.pseudonymize(spec.repo, label="repository")
         destination = str(spec.local_dir.resolve())
         destination_hmac, destination_label = self._store.pseudonymize(
             destination, label="destination"
@@ -191,16 +197,29 @@ class SQLiteHistoryRecorder:
     def interrupt(self, session_id: str, observed_at_utc: float) -> None:
         self.finalize(session_id, HistoryOutcome.INTERRUPTED, observed_at_utc)
 
-    def finalize(
-        self, session_id: str, outcome: HistoryOutcome, observed_at_utc: float
-    ) -> None:
+    def diagnostic(self, session_id: str, error: MonitorError, observed_at_utc: float) -> None:
+        if not self.available or session_id not in self._recordings:
+            return
+        try:
+            self._store.add_diagnostic(
+                session_id,
+                HistoryDiagnostic(
+                    observed_at_utc=observed_at_utc,
+                    category=error.category.value,
+                    code=error.code,
+                    message=sanitize_persisted_diagnostic(error.message),
+                    recoverable=error.recoverable,
+                ),
+            )
+        except Exception as exc:
+            self._disable(exc)
+
+    def finalize(self, session_id: str, outcome: HistoryOutcome, observed_at_utc: float) -> None:
         recording = self._recordings.pop(session_id, None)
         if not self.available or recording is None:
             return
         try:
-            self._store.finalize(
-                recording.checkpoint.finish(outcome, observed_at_utc)
-            )
+            self._store.finalize(recording.checkpoint.finish(outcome, observed_at_utc))
         except Exception as exc:
             self._disable(exc)
 
