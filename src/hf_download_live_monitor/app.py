@@ -10,6 +10,7 @@ from typing import Protocol
 from hf_download_live_monitor.controls import DisplayState
 from hf_download_live_monitor.engine import ProgressEngine
 from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
+from hf_download_live_monitor.history_recorder import HistoryRecorder, NullHistoryRecorder
 from hf_download_live_monitor.models import (
     DownloadPlan,
     DownloadSpec,
@@ -52,9 +53,12 @@ class WatchApplication:
         renderer: Renderer,
         refresh: float = 0.25,
         clock: Callable[[], float] = time.monotonic,
+        utc_clock: Callable[[], float] = time.time,
         sleeper: Callable[[float], None] = time.sleep,
         controls: Controls | None = None,
         display_state: DisplayState | None = None,
+        history: HistoryRecorder | None = None,
+        mode: str = "watch",
     ) -> None:
         if refresh <= 0:
             raise ValueError("refresh interval must be positive")
@@ -64,9 +68,14 @@ class WatchApplication:
         self._renderer = renderer
         self._refresh = refresh
         self._clock = clock
+        self._utc_clock = utc_clock
         self._sleeper = sleeper
         self._controls = controls
         self._display_state = display_state or DisplayState()
+        self._history = history or NullHistoryRecorder()
+        self._mode = mode
+        self._history_session_id = ""
+        self._history_finalized = False
 
     @property
     def cancellation_requested(self) -> bool:
@@ -88,6 +97,7 @@ class WatchApplication:
         active_plan: DownloadPlan | None = None
         try:
             active_plan = plan or self._prepare_plan(spec, manifest)
+            self._history_session_id = self._safe_history_start(active_plan.spec)
             if once:
                 snapshot = self._observe_and_render(active_plan, final=True)
                 return self._exit_code(snapshot)
@@ -155,6 +165,11 @@ class WatchApplication:
                 except BaseException as exc:
                     if close_error is None:
                         close_error = exc
+            if self._history_session_id and not self._history_finalized:
+                with suppress(Exception):
+                    self._history.interrupt(self._history_session_id, self._utc_clock())
+            with suppress(Exception):
+                self._history.close()
             if close_error is not None:
                 if primary_error is not None:
                     self._attach_close_note(primary_error, close_error)
@@ -176,7 +191,23 @@ class WatchApplication:
         observations = self._observer.observe(plan.spec, plan.manifest, now)
         snapshot = self._engine.update(plan, observations, now=now, final=final)
         self._renderer.render(snapshot)
+        if self._history_session_id:
+            with suppress(Exception):
+                self._history.checkpoint(
+                    self._history_session_id,
+                    snapshot,
+                    self._utc_clock(),
+                    final=final,
+                )
+            if final:
+                self._history_finalized = True
         return snapshot
+
+    def _safe_history_start(self, spec: DownloadSpec) -> str:
+        try:
+            return self._history.start(spec, self._mode, self._utc_clock())
+        except Exception:
+            return ""
 
     @staticmethod
     def _exit_code(snapshot: ProgressSnapshot) -> int:
