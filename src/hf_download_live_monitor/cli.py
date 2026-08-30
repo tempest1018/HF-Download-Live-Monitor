@@ -19,6 +19,7 @@ from hf_download_live_monitor.controls import (
 from hf_download_live_monitor.engine import ProgressEngine
 from hf_download_live_monitor.errors import ErrorCategory, exit_code_for
 from hf_download_live_monitor.filesystem import FileSystemObserver
+from hf_download_live_monitor.history_cli import history_cli, make_history_recorder
 from hf_download_live_monitor.layout import ViewMode
 from hf_download_live_monitor.models import DownloadSpec, MonitorError, RepoType
 from hf_download_live_monitor.preflight import validate_destination
@@ -40,7 +41,12 @@ from hf_download_live_monitor.supervisor_renderers import (
     SupervisorRichRenderer,
 )
 
-cli = typer.Typer(no_args_is_help=True, help="Monitor Hugging Face downloads.")
+cli = typer.Typer(
+    no_args_is_help=True,
+    help="Monitor Hugging Face downloads.",
+    rich_markup_mode=None,
+)
+cli.add_typer(history_cli, name="history")
 
 
 @cli.callback()
@@ -65,10 +71,17 @@ def attach(
     discovery_refresh: float = typer.Option(1.0, "--discovery-refresh", min=0.01),
     retention: float = typer.Option(15.0, "--retention", min=0.0),
     max_sessions: int = typer.Option(32, "--max-sessions", min=1),
+    record_history: bool = typer.Option(False, "--record-history"),
+    no_record_history: bool = typer.Option(False, "--no-record-history"),
+    include_identifiers: bool = typer.Option(
+        False, "--include-identifiers", help="Opt in with --include-identifiers."
+    ),
+    history_path: Path | None = typer.Option(None, "--history-path"),
 ) -> None:
     """Attach to an active Hugging Face download."""
     if pid is not None and all_downloads:
         raise typer.BadParameter("--pid and --all cannot be used together")
+    history_override = _history_override(record_history, no_record_history)
     _validate_outputs(plain, json_output, jsonl)
     try:
         if all_downloads and not once:
@@ -85,6 +98,9 @@ def attach(
                 ascii_only=ascii_only,
                 view=view,
                 reduced_motion=reduced_motion,
+                record_history=history_override,
+                include_identifiers=include_identifiers,
+                history_path=history_path,
             ).run()
             if code:
                 raise typer.Exit(code=code)
@@ -107,6 +123,10 @@ def attach(
                 ascii_only=ascii_only,
                 view=view,
                 reduced_motion=reduced_motion,
+                record_history=history_override,
+                include_identifiers=include_identifiers,
+                history_path=history_path,
+                mode="attach",
             )
             if code:
                 raise typer.Exit(code=code)
@@ -133,9 +153,16 @@ def run_download(
     view: ViewMode = typer.Option(ViewMode.BALANCED, "--view"),
     reduced_motion: bool = typer.Option(False, "--reduced-motion"),
     hf_executable: str = typer.Option("hf", "--hf-executable"),
+    record_history: bool = typer.Option(False, "--record-history"),
+    no_record_history: bool = typer.Option(False, "--no-record-history"),
+    include_identifiers: bool = typer.Option(
+        False, "--include-identifiers", help="Opt in with --include-identifiers."
+    ),
+    history_path: Path | None = typer.Option(None, "--history-path"),
 ) -> None:
     """Launch and monitor an official Hugging Face download."""
     _validate_outputs(plain, json_output, jsonl)
+    history_override = _history_override(record_history, no_record_history)
     spec = DownloadSpec(
         repo=repo,
         local_dir=local_dir,
@@ -158,6 +185,10 @@ def run_download(
             ascii_only=ascii_only,
             view=view,
             reduced_motion=reduced_motion,
+            record_history=history_override,
+            include_identifiers=include_identifiers,
+            history_path=history_path,
+            mode="run",
         )
         code = ManagedDownload(application).run(plan.spec, executable=hf_executable, plan=plan)
     except MonitorError as exc:
@@ -193,9 +224,16 @@ def watch(
     ascii_only: bool = typer.Option(False, "--ascii"),
     view: ViewMode = typer.Option(ViewMode.BALANCED, "--view"),
     reduced_motion: bool = typer.Option(False, "--reduced-motion"),
+    record_history: bool = typer.Option(False, "--record-history"),
+    no_record_history: bool = typer.Option(False, "--no-record-history"),
+    include_identifiers: bool = typer.Option(
+        False, "--include-identifiers", help="Opt in with --include-identifiers."
+    ),
+    history_path: Path | None = typer.Option(None, "--history-path"),
 ) -> None:
     """Watch an explicit Hugging Face local directory."""
     _validate_outputs(plain, json_output, jsonl)
+    history_override = _history_override(record_history, no_record_history)
 
     spec = DownloadSpec(
         repo=repo,
@@ -219,6 +257,10 @@ def watch(
             ascii_only=ascii_only,
             view=view,
             reduced_motion=reduced_motion,
+            record_history=history_override,
+            include_identifiers=include_identifiers,
+            history_path=history_path,
+            mode="watch",
         )
     except MonitorError as exc:
         _exit_for_error(exc)
@@ -229,6 +271,18 @@ def watch(
 def _validate_outputs(plain: bool, json_output: bool, jsonl: bool) -> None:
     if sum((plain, json_output, jsonl)) > 1:
         raise typer.BadParameter("--plain, --json, and --jsonl cannot be used together")
+
+
+def _history_override(record: bool, no_record: bool) -> bool | None:
+    if record and no_record:
+        raise typer.BadParameter(
+            "--record-history and --no-record-history cannot be used together"
+        )
+    if record:
+        return True
+    if no_record:
+        return False
+    return None
 
 
 def _watch_spec(
@@ -244,6 +298,10 @@ def _watch_spec(
     ascii_only: bool,
     view: ViewMode,
     reduced_motion: bool,
+    record_history: bool | None = None,
+    include_identifiers: bool = False,
+    history_path: Path | None = None,
+    mode: str = "watch",
 ) -> int:
     application = _make_application(
         refresh=refresh,
@@ -255,6 +313,10 @@ def _watch_spec(
         ascii_only=ascii_only,
         view=view,
         reduced_motion=reduced_motion,
+        record_history=record_history,
+        include_identifiers=include_identifiers,
+        history_path=history_path,
+        mode=mode,
     )
     return application.run(spec, once=once)
 
@@ -270,6 +332,10 @@ def _make_application(
     ascii_only: bool,
     view: ViewMode,
     reduced_motion: bool,
+    record_history: bool | None = None,
+    include_identifiers: bool = False,
+    history_path: Path | None = None,
+    mode: str = "watch",
 ) -> WatchApplication:
     if json_output:
         renderer = JsonRenderer()
@@ -285,6 +351,11 @@ def _make_application(
             reduced_motion=reduced_motion,
         )
     controls = KeyboardController() if isinstance(renderer, RichRenderer) else None
+    history = make_history_recorder(
+        record=record_history,
+        include_identifiers=include_identifiers,
+        history_path=history_path,
+    )
     return WatchApplication(
         repository=HubRepository(),
         observer=FileSystemObserver(),
@@ -293,6 +364,8 @@ def _make_application(
         refresh=refresh,
         controls=controls,
         display_state=DisplayState(view_mode=view),
+        history=history,
+        mode=mode,
     )
 
 
@@ -310,6 +383,9 @@ def _make_supervisor(
     ascii_only: bool,
     view: ViewMode,
     reduced_motion: bool,
+    record_history: bool | None = None,
+    include_identifiers: bool = False,
+    history_path: Path | None = None,
 ) -> DownloadSupervisor:
     state = SupervisorDisplayState(view_mode=view)
     if json_output:
@@ -327,6 +403,11 @@ def _make_supervisor(
         )
     controls = KeyboardController() if isinstance(renderer, SupervisorRichRenderer) else None
     provider = system_process_provider()
+    history = make_history_recorder(
+        record=record_history,
+        include_identifiers=include_identifiers,
+        history_path=history_path,
+    )
     return DownloadSupervisor(
         lambda: discover_downloads(provider),
         discovery_refresh=discovery_refresh,
@@ -339,6 +420,7 @@ def _make_supervisor(
         renderer=renderer,
         controls=controls,
         display_state=state,
+        history=history,
     )
 
 
