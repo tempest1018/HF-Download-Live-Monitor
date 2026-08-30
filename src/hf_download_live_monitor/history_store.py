@@ -95,16 +95,20 @@ class HistoryStore:
         self._closed = False
 
     @classmethod
-    def open(cls, paths: HistoryPaths, *, create: bool) -> HistoryStore | None:
+    def open(
+        cls, paths: HistoryPaths, *, create: bool, readonly: bool = False
+    ) -> HistoryStore | None:
+        if create and readonly:
+            raise ValueError("a read-only history store cannot be created")
         validate_history_paths(paths)
         if not paths.database.exists() and not create:
             return None
         if create:
             ensure_private_history_directory(paths)
-        connection = cls._connect(paths.database, create=create)
+        connection = cls._connect(paths.database, create=create, readonly=readonly)
         try:
-            cls._configure(connection)
-            cls._initialize_or_validate(connection, create=create)
+            cls._configure(connection, readonly=readonly)
+            cls._initialize_or_validate(connection, create=create, allow_migration=not readonly)
             key = cls._load_or_create_key(paths.pseudonym_key, create=create)
         except BaseException:
             connection.close()
@@ -112,12 +116,13 @@ class HistoryStore:
         return cls(paths, connection, key)
 
     @staticmethod
-    def _connect(database: Path, *, create: bool) -> sqlite3.Connection:
+    def _connect(database: Path, *, create: bool, readonly: bool) -> sqlite3.Connection:
         try:
             if create:
                 connection = sqlite3.connect(database, timeout=_BUSY_TIMEOUT_MS / 1000)
             else:
-                uri = database.resolve().as_uri() + "?mode=rw"
+                mode = "ro" if readonly else "rw"
+                uri = database.resolve().as_uri() + f"?mode={mode}"
                 connection = sqlite3.connect(uri, uri=True, timeout=_BUSY_TIMEOUT_MS / 1000)
         except sqlite3.Error as exc:
             raise _store_error("history_unavailable", "history database is unavailable") from exc
@@ -125,13 +130,18 @@ class HistoryStore:
         return connection
 
     @staticmethod
-    def _configure(connection: sqlite3.Connection) -> None:
+    def _configure(connection: sqlite3.Connection, *, readonly: bool) -> None:
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
-        connection.execute("PRAGMA journal_mode = WAL")
+        if readonly:
+            connection.execute("PRAGMA query_only = ON")
+        else:
+            connection.execute("PRAGMA journal_mode = WAL")
 
     @staticmethod
-    def _initialize_or_validate(connection: sqlite3.Connection, *, create: bool) -> None:
+    def _initialize_or_validate(
+        connection: sqlite3.Connection, *, create: bool, allow_migration: bool
+    ) -> None:
         has_metadata = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='metadata'"
         ).fetchone()
@@ -155,6 +165,11 @@ class HistoryStore:
                 "history_schema_newer", "history database uses a newer unsupported schema"
             )
         if version < SCHEMA_VERSION:
+            if not allow_migration:
+                raise _store_error(
+                    "history_schema_older",
+                    "history database requires migration before read-only access",
+                )
             HistoryStore._migrate(connection, version)
 
     @staticmethod
@@ -477,14 +492,19 @@ class HistoryStore:
 
     def purge(self) -> int:
         self.close()
+        return self.purge_paths(self.paths)
+
+    @staticmethod
+    def purge_paths(paths: HistoryPaths) -> int:
+        validate_history_paths(paths)
         removed = 0
-        for path in _managed_files(self.paths):
-            if path.exists() and not path.is_symlink():
+        for path in _managed_files(paths):
+            if path.exists() or path.is_symlink():
                 path.unlink()
                 removed += 1
-        if not self.paths.custom_database:
+        if not paths.custom_database:
             with suppress(OSError):
-                self.paths.directory.rmdir()
+                paths.directory.rmdir()
         return removed
 
     @contextmanager

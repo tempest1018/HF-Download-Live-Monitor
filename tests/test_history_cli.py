@@ -80,3 +80,18 @@ def test_reset_preserves_corrupt_database(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert database.exists()
     assert tuple(state.glob("history.sqlite3.corrupt-*"))
+
+
+def test_purge_removes_corrupt_database_without_opening_it(tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "history.sqlite3").write_bytes(b"corrupt")
+    (state / "pseudonym.key").write_bytes(b"k" * 32)
+    result = runner.invoke(
+        cli,
+        ["history", "purge", "--yes"],
+        env={"HF_DOWNLOAD_LIVE_MONITOR_HISTORY_DIR": str(state)},
+    )
+    assert result.exit_code == 0
+    assert not (state / "history.sqlite3").exists()
+    assert not (state / "pseudonym.key").exists()

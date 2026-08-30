@@ -55,8 +55,8 @@ def make_history_recorder(
     return SQLiteHistoryRecorder(store, include_identifiers=include_identifiers)
 
 
-def _store(path: Path | None, *, create: bool) -> HistoryStore | None:
-    return HistoryStore.open(resolve_history_paths(override=path), create=create)
+def _store(path: Path | None, *, create: bool, readonly: bool = False) -> HistoryStore | None:
+    return HistoryStore.open(resolve_history_paths(override=path), create=create, readonly=readonly)
 
 
 @history_cli.command("status")
@@ -66,7 +66,9 @@ def status(
 ) -> None:
     paths = resolve_history_paths(override=history_path)
     health = inspect_history_health(paths)
-    store = HistoryStore.open(paths, create=False) if health.value == "healthy" else None
+    store = (
+        HistoryStore.open(paths, create=False, readonly=True) if health.value == "healthy" else None
+    )
     config = HistoryConfig.defaults() if store is None else store.load_config()
     count = 0 if store is None else len(store.list_records(HistoryQuery(limit=1_000)))
     if store is not None:
@@ -145,7 +147,7 @@ def list_history(
 ) -> None:
     if json_output and jsonl:
         raise typer.BadParameter("--json and --jsonl cannot be used together")
-    store = _store(history_path, create=False)
+    store = _store(history_path, create=False, readonly=True)
     records = () if store is None else store.list_records(HistoryQuery(limit=limit))
     if store is not None:
         store.close()
@@ -163,7 +165,7 @@ def show(
     json_output: bool = typer.Option(False, "--json"),
     history_path: Path | None = typer.Option(None, "--history-path"),
 ) -> None:
-    store = _store(history_path, create=False)
+    store = _store(history_path, create=False, readonly=True)
     record = None if store is None else store.get_record(session_id)
     if store is not None:
         store.close()
@@ -185,7 +187,7 @@ def export_history(
 ) -> None:
     if include_identifiers:
         _confirm("Export readable repository names and local paths?", yes=yes)
-    store = _store(history_path, create=False)
+    store = _store(history_path, create=False, readonly=True)
     records = () if store is None else store.list_records(HistoryQuery(limit=1_000))
     if store is not None:
         store.close()
@@ -242,8 +244,8 @@ def purge(
     history_path: Path | None = typer.Option(None, "--history-path"),
 ) -> None:
     _confirm("Permanently remove all local history data?", yes=yes)
-    store = _store(history_path, create=False)
-    removed = 0 if store is None else store.purge()
+    paths = resolve_history_paths(override=history_path)
+    removed = HistoryStore.purge_paths(paths)
     typer.echo(f"Removed {removed} local history file(s). History is disabled.")
 
 

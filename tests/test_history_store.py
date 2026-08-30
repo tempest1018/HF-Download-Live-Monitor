@@ -37,6 +37,17 @@ def test_open_without_create_does_not_touch_disk(tmp_path: Path) -> None:
     assert not paths.directory.exists()
 
 
+def test_read_only_open_enforces_query_only_mode(tmp_path: Path) -> None:
+    paths = paths_under(tmp_path)
+    store = HistoryStore.open(paths, create=True)
+    assert store is not None
+    store.close()
+    reader = HistoryStore.open(paths, create=False, readonly=True)
+    assert reader is not None
+    assert reader.connection.execute("PRAGMA query_only").fetchone()[0] == 1
+    reader.close()
+
+
 def test_create_initializes_versioned_wal_database(tmp_path: Path) -> None:
     store = HistoryStore.open(paths_under(tmp_path), create=True)
     assert store is not None
