@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Opt-in, privacy-first local download history with sanitized summaries, retention and
+  capacity controls, corruption recovery, complete purge, and independent-machine
+  acceptance guidance.
+
 All notable changes follow Keep a Changelog and semantic versioning.
 
 ## Unreleased

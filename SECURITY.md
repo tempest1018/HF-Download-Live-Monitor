@@ -1,5 +1,14 @@
 # Security policy
 
+## Local history
+
+History is opt-in and local-only. Default records exclude filenames, command lines,
+process identifiers, credentials, content, and readable repository or destination
+identifiers. Treat an identifier-enabled database and the pseudonym key as private local
+state. Use `hf-download-live-monitor history purge --yes` to remove all managed history
+state before transferring or retiring a machine. Sanitized reports should contain only
+the application version, OS/architecture, error code, checksums, and pass/fail results.
+
 Please report suspected vulnerabilities privately to the project maintainers rather than opening a public issue. Until a public reporting address is configured, do not include credentials, private repository names, command lines, or downloaded data in reports.
 
 Supported releases receive fixes on the newest 0.x line. HF Download Live Monitor stores no credentials, includes no telemetry, and delegates authentication to `huggingface_hub`. Diagnostic output should still be reviewed before sharing because local paths and repository names may be sensitive.

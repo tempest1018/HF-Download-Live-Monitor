@@ -1,5 +1,17 @@
 # Architecture
 
+## Privacy-first local history
+
+Watch, managed-run, and attachment orchestration call a small recorder protocol. The
+default null recorder performs no I/O. An explicitly enabled SQLite recorder stores only
+aggregate lifecycle checkpoints behind a 100 ms busy limit; write, lock, capacity, and
+corruption failures disable that recorder rather than escaping into monitoring.
+
+SQLite uses a versioned schema, WAL, foreign keys, bounded queries, transactional
+retention, and a private 32-byte local HMAC key for stable pseudonym labels. The key is
+local application state, not a Hugging Face or network credential, and `history purge`
+deletes it. Readable identifiers require per-invocation opt-in and never become policy.
+
 The main data path is `DownloadPlan -> preflight -> FileSystemObserver ->
 ProgressEngine/verifier -> ProgressSnapshot -> renderer`. The CLI normalizes user input
 into an immutable `DownloadSpec`. `HubRepository.prepare` uses the standard Hugging

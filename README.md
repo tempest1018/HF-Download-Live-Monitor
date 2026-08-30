@@ -1,5 +1,9 @@
 # HF Download Live Monitor
 
+Download history is optional, local-only, and disabled by default. See the
+[user manual](docs/user-manual.md#local-private-history) for controls and the
+[second-PC/VM acceptance guide](docs/second-pc-vm-acceptance.md) for independent testing.
+
 HF Download Live Monitor is a privacy-conscious, cross-platform terminal monitor for Hugging Face downloads. It reports accurate per-file and aggregate progress without replacing the official download client.
 
 New here? Follow the [complete user manual](docs/user-manual.md) for prerequisites,

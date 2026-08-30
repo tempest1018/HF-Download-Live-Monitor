@@ -844,6 +844,41 @@ workflow is run again. Release Acceptance is read-only and does not publish to P
 
 ## Privacy and security
 
+## Local private history
+
+Local history is disabled by default, so ordinary monitoring creates no history database
+or pseudonym key. When enabled, the default retention is 30 days and the size cap is
+64 MiB. Records remain on this computer; the app has no history synchronization or
+telemetry service. History failures are fail-open and cannot change a download's result.
+
+Enable recording with `hf-download-live-monitor history enable`, inspect policy with
+`history status`, and tune it with `history configure --retention-days 30
+--max-size-mib 64`. Use literal `unlimited` only when you intentionally do not want an
+age limit. `history disable` stops new default recording but retains existing records.
+Per invocation, `--record-history` forces recording and `--no-record-history` suppresses
+it without changing policy.
+
+Use `history list`, `history show SESSION_ID`, and `history export --jsonl` to inspect
+sanitized aggregates. Repository and destination labels are keyed local pseudonyms.
+Readable repository names and paths are stored only for an invocation that explicitly
+uses `--include-identifiers`; identifier export asks for separate confirmation.
+
+User-controlled maintenance commands are `history delete SESSION_ID`, `history clear
+--before YYYY-MM-DD`, `history vacuum`, `history recover --output ABSOLUTE_PATH`, and
+`history reset --preserve-corrupt`. Destructive commands require confirmation or
+`--yes`. `history purge --yes` closes the database and deletes its database, SQLite
+sidecars, and local pseudonym key; it does not delete downloads.
+
+Default state directories are `%LOCALAPPDATA%\HF Download Live Monitor\history` on
+Windows, `~/Library/Application Support/HF Download Live Monitor/history` on macOS,
+and `$XDG_STATE_HOME/hf-download-live-monitor/history` (or
+`~/.local/state/hf-download-live-monitor/history`) on Linux. An absolute
+`--history-path` or `HF_DOWNLOAD_LIVE_MONITOR_HISTORY_DIR` override supports portable
+tests. Never share the database or key when reporting a problem.
+
+For an independent installation test, follow the
+[second-PC/VM acceptance guide](second-pc-vm-acceptance.md).
+
 - No telemetry is collected.
 - HF Download Live Monitor does not store credentials.
 - Authentication is handled by the official Hugging Face library.
